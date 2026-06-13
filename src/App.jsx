@@ -1,7 +1,10 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Modal from "./components/Modal.jsx";
 import BotoesModal from "./components/BotoesModal.jsx";
 import FormVisita from "./components/FormVisita.jsx";
+import FormPessoa from "./components/FormPessoa.jsx";
+import FormLoja from "./components/FormLoja.jsx";
+import { supabase } from "./supabaseClient.js";
 import {
     PROMOTORES_DADOS,
     INDUSTRIAS,
@@ -23,6 +26,14 @@ export default function App() {
     const [filtros, setFiltros] = useState({ promotor: "", supervisor: "", uf: "", dia: "", busca: "" });
     const [modalVisita, setModalVisita] = useState(false);
     const [modalEditar, setModalEditar] = useState(null);
+    const [modalPessoa, setModalPessoa] = useState(false);
+    const [modalEditarPessoa, setModalEditarPessoa] = useState(null);
+    const [modoManual, setModoManual] = useState(false);
+    const [manualInput, setManualInput] = useState("");
+    const [pessoaForm, setPessoaForm] = useState({ nome: "", loja: "", role: "Promotor" });
+    const [pessoas, setPessoas] = useState(
+        PROMOTORES_DADOS.map((p) => ({ ...p, role: "Promotor", loja: p.loja || "", cidade: p.cidade || "" }))
+    );
     const [novaVisita, setNovaVisita] = useState({
         industria: "",
         loja: "",
@@ -34,11 +45,44 @@ export default function App() {
     const [toast, setToast] = useState(null);
     const [buscaLojas, setBuscaLojas] = useState("");
     const [filtroUFLojas, setFiltroUFLojas] = useState("");
+    const [storeFilter, setStoreFilter] = useState("");
+    const [lojasState, setLojasState] = useState(TODAS_LOJAS);
+    const [modalLoja, setModalLoja] = useState(false);
+    const [lojaForm, setLojaForm] = useState({ rede: "", loja: "", uf: "" });
+    const [loadingSupabase, setLoadingSupabase] = useState(false);
+    const [supabaseError, setSupabaseError] = useState(null);
 
     const showToast = (msg, tipo = "ok") => {
         setToast({ msg, tipo });
         setTimeout(() => setToast(null), 3000);
     };
+
+    useEffect(() => {
+        const carregarDados = async () => {
+            setLoadingSupabase(true);
+            setSupabaseError(null);
+            try {
+                const { data: lojas, error: lojasError } = await supabase.from("lojas").select("*").order("id", { ascending: true });
+                if (lojasError) throw lojasError;
+                if (lojas && lojas.length > 0) setLojasState(lojas);
+
+                const { data: pessoas, error: pessoasError } = await supabase.from("pessoas").select("*").order("nome", { ascending: true });
+                if (pessoasError) throw pessoasError;
+                if (pessoas && pessoas.length > 0) setPessoas(pessoas);
+
+                const { data: roteirosData, error: roteirosError } = await supabase.from("roteiros").select("*").order("id", { ascending: true });
+                if (roteirosError) throw roteirosError;
+                if (roteirosData && roteirosData.length > 0) setRoteiros(roteirosData);
+            } catch (error) {
+                setSupabaseError(error.message || "Falha ao conectar ao Supabase");
+                showToast("Não foi possível carregar dados do Supabase. Dados locais serão usados.", "erro");
+            } finally {
+                setLoadingSupabase(false);
+            }
+        };
+
+        carregarDados();
+    }, []);
 
     const roteirosFiltrados = useMemo(
         () =>
@@ -72,7 +116,7 @@ export default function App() {
 
     const lojasFiltradas = useMemo(
         () =>
-            TODAS_LOJAS.filter((l) => {
+            lojasState.filter((l) => {
                 if (filtroUFLojas && l.uf !== filtroUFLojas) return false;
                 if (buscaLojas) {
                     const b = buscaLojas.toLowerCase();
@@ -80,19 +124,49 @@ export default function App() {
                 }
                 return true;
             }),
-        [buscaLojas, filtroUFLojas]
+        [buscaLojas, filtroUFLojas, lojasState]
+    );
+
+    const lojasOrdenadas = useMemo(
+        () => [...new Set(lojasState.map((l) => l.loja))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+        [lojasState]
+    );
+
+    const pessoasFiltradas = useMemo(
+        () => pessoas.filter((p) => !storeFilter || p.loja === storeFilter),
+        [pessoas, storeFilter]
     );
 
     const ufsRoteiros = [...new Set(roteiros.map((r) => r.uf))].sort();
+    const pessoasPorLoja = useMemo(
+        () =>
+            pessoas.reduce((acc, pessoa) => {
+                if (!pessoa.loja) return acc;
+                acc[pessoa.loja] = (acc[pessoa.loja] || 0) + 1;
+                return acc;
+            }, {}),
+        [pessoas]
+    );
     const supervisores = [...new Set(roteiros.map((r) => r.supervisor))].sort();
-    const ufsLojas = [...new Set(TODAS_LOJAS.map((l) => l.uf))].sort();
+    const ufsLojas = [...new Set(lojasState.map((l) => l.uf))].sort();
+    const promotoresParaSelect = pessoas.filter((p) => p.role === "Promotor");
+    const supervisoresParaSelect = pessoas.filter((p) => p.role === "Supervisor");
 
-    const salvarVisita = () => {
+    const salvarVisita = async () => {
         if (!novaVisita.industria || !novaVisita.loja || !novaVisita.promotor) {
             showToast("Preencha todos os campos obrigatórios", "erro");
             return;
         }
-        setRoteiros((p) => [...p, { ...novaVisita, id: Date.now() }]);
+        const dadosVisita = { ...novaVisita };
+        const { data, error } = await supabase.from("roteiros").insert([dadosVisita]).select().single();
+        if (error) {
+            console.warn(error);
+            setRoteiros((p) => [...p, { ...dadosVisita, id: Date.now() }]);
+            showToast("Visita adicionada localmente (Supabase indisponível)");
+        } else {
+            setRoteiros((p) => [...p, data]);
+            showToast("Visita adicionada!");
+        }
         setNovaVisita({
             industria: "",
             loja: "",
@@ -102,18 +176,146 @@ export default function App() {
             dias: { SEG: false, TER: false, QUA: false, QUI: false, SEX: false, SAB: false, DOM: false },
         });
         setModalVisita(false);
-        showToast("Visita adicionada!");
     };
 
-    const excluir = (id) => {
-        setRoteiros((p) => p.filter((r) => r.id !== id));
-        showToast("Roteiro removido");
+    const salvarPessoa = async () => {
+        if (!pessoaForm.nome || !pessoaForm.role) {
+            showToast("Preencha nome e função", "erro");
+            return;
+        }
+        const novaPessoa = { ...pessoaForm, cidade: pessoaForm.cidade || "" };
+        const { data, error } = await supabase.from("pessoas").insert([novaPessoa]).select().single();
+        if (error) {
+            console.warn(error);
+            setPessoas((p) => [...p, { ...novaPessoa, id: Date.now() }]);
+            showToast("Pessoa adicionada localmente (Supabase indisponível)");
+        } else {
+            setPessoas((p) => [...p, data]);
+            showToast("Pessoa adicionada!");
+        }
+        setPessoaForm({ nome: "", loja: "", role: "Promotor" });
+        setModalPessoa(false);
     };
 
-    const salvarEdicao = () => {
-        setRoteiros((p) => p.map((r) => (r.id === modalEditar.id ? modalEditar : r)));
+    const salvarEdicaoPessoa = async () => {
+        if (!modalEditarPessoa) return;
+        const { data, error } = await supabase
+            .from("pessoas")
+            .update({ ...modalEditarPessoa })
+            .eq("id", modalEditarPessoa.id)
+            .select()
+            .single();
+        if (error) {
+            console.warn(error);
+            setPessoas((p) => p.map((item) => (item.id === modalEditarPessoa.id ? modalEditarPessoa : item)));
+            showToast("Alteração salva localmente (Supabase indisponível)");
+        } else {
+            setPessoas((p) => p.map((item) => (item.id === modalEditarPessoa.id ? data : item)));
+            showToast("Pessoa atualizada!");
+        }
+        setModalEditarPessoa(null);
+    };
+
+    const processarManual = async () => {
+        if (!manualInput.trim()) {
+            showToast("Digite ao menos uma linha para processar", "erro");
+            return;
+        }
+        const linhas = manualInput
+            .split("\n")
+            .map((linha) => linha.trim())
+            .filter(Boolean);
+        if (!linhas.length) {
+            showToast("Nenhuma linha válida encontrada", "erro");
+            return;
+        }
+        const novas = linhas.map((linha, index) => {
+            const partes = linha.split("|").map((texto) => texto.trim());
+            const nome = partes[0] || "";
+            const role = partes[1] ? partes[1].charAt(0).toUpperCase() + partes[1].slice(1).toLowerCase() : "Promotor";
+            return {
+                id: Date.now() + index,
+                nome,
+                role: role === "Supervisor" ? "Supervisor" : "Promotor",
+                loja: pessoaForm.loja || "",
+                cidade: "",
+            };
+        });
+        const { error } = await supabase.from("pessoas").insert(novas);
+        if (error) {
+            console.warn(error);
+            setPessoas((p) => [...p, ...novas]);
+            showToast(`${novas.length} pessoas adicionadas localmente (Supabase indisponível)`);
+        } else {
+            setPessoas((p) => [...p, ...novas]);
+            showToast(`${novas.length} pessoas adicionadas!`);
+        }
+        setManualInput("");
+        setModoManual(false);
+        setPessoaForm({ nome: "", loja: "", role: "Promotor" });
+        setModalPessoa(false);
+    };
+
+    const excluirPessoa = async (id) => {
+        const { error } = await supabase.from("pessoas").delete().eq("id", id);
+        if (error) {
+            console.warn(error);
+            setPessoas((p) => p.filter((item) => item.id !== id));
+            showToast("Pessoa removida localmente (Supabase indisponível)");
+        } else {
+            setPessoas((p) => p.filter((item) => item.id !== id));
+            showToast("Pessoa removida");
+        }
+    };
+
+    const salvarLoja = async () => {
+        if (!lojaForm.rede || !lojaForm.loja || !lojaForm.uf) {
+            showToast("Preencha rede, loja e UF", "erro");
+            return;
+        }
+        const novaLoja = { ...lojaForm };
+        const { data, error } = await supabase.from("lojas").insert([novaLoja]).select().single();
+        if (error) {
+            console.warn(error);
+            setLojasState((p) => [...p, { ...novaLoja, id: Date.now() }]);
+            showToast("Loja adicionada localmente (Supabase indisponível)");
+        } else {
+            setLojasState((p) => [...p, data]);
+            showToast("Loja adicionada!");
+        }
+        setLojaForm({ rede: "", loja: "", uf: "" });
+        setModalLoja(false);
+    };
+
+    const excluir = async (id) => {
+        const { error } = await supabase.from("roteiros").delete().eq("id", id);
+        if (error) {
+            console.warn(error);
+            setRoteiros((p) => p.filter((r) => r.id !== id));
+            showToast("Roteiro removido localmente (Supabase indisponível)");
+        } else {
+            setRoteiros((p) => p.filter((r) => r.id !== id));
+            showToast("Roteiro removido");
+        }
+    };
+
+    const salvarEdicao = async () => {
+        if (!modalEditar) return;
+        const { data, error } = await supabase
+            .from("roteiros")
+            .update({ ...modalEditar })
+            .eq("id", modalEditar.id)
+            .select()
+            .single();
+        if (error) {
+            console.warn(error);
+            setRoteiros((p) => p.map((r) => (r.id === modalEditar.id ? modalEditar : r)));
+            showToast("Roteiro atualizado localmente (Supabase indisponível)");
+        } else {
+            setRoteiros((p) => p.map((r) => (r.id === modalEditar.id ? data : r)));
+            showToast("Roteiro atualizado!");
+        }
         setModalEditar(null);
-        showToast("Roteiro atualizado!");
     };
 
     const setF = (k, v) => setFiltros((f) => ({ ...f, [k]: v }));
@@ -190,7 +392,7 @@ export default function App() {
 
             <div style={{ background: "#161e2e", borderBottom: "1px solid #1e2d45", padding: "0 24px" }}>
                 <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", gap: 4 }}>
-                    {['Roteiros', 'Promotores', 'Lojas'].map((t) => (
+                    {['Roteiros', 'Pessoas', 'Lojas'].map((t) => (
                         <button
                             key={t}
                             onClick={() => setTab(t)}
@@ -397,45 +599,114 @@ export default function App() {
                     </div>
                 )}
 
-                {tab === 'Promotores' && (
+                {tab === 'Pessoas' && (
                     <div>
-                        <div style={{ marginBottom: 16, color: '#64748b', fontSize: 13 }}>{PROMOTORES_DADOS.length} promotores cadastrados</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
+                            <div style={{ color: '#64748b', fontSize: 13 }}>{pessoasFiltradas.length} pessoas cadastradas{storeFilter ? ` em ${storeFilter}` : ''}</div>
+                            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <select
+                                    value={storeFilter}
+                                    onChange={(e) => setStoreFilter(e.target.value)}
+                                    style={S.select}
+                                >
+                                    <option value="">Todas as lojas</option>
+                                    {lojasOrdenadas.map((loja) => (
+                                        <option key={loja} value={loja}>
+                                            {loja}
+                                        </option>
+                                    ))}
+                                </select>
+                                <button
+                                    onClick={() => {
+                                        setPessoaForm({ nome: '', loja: storeFilter || '', role: 'Promotor', cidade: '' });
+                                        setModoManual(false);
+                                        setManualInput('');
+                                        setModalPessoa(true);
+                                    }}
+                                    style={{
+                                        background: 'linear-gradient(135deg, #3b82f6, #6366f1)',
+                                        color: '#fff',
+                                        border: 'none',
+                                        borderRadius: 8,
+                                        padding: '8px 16px',
+                                        fontWeight: 600,
+                                        fontSize: 13,
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    ＋ Nova Pessoa
+                                </button>
+                            </div>
+                        </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px,1fr))', gap: 12 }}>
-                            {PROMOTORES_DADOS.map((p) => {
+                            {pessoasFiltradas.map((p) => {
                                 const qtd = roteiros.filter((r) => r.promotor.trim().toUpperCase() === p.nome.trim().toUpperCase()).length;
-                                const uf = roteiros.find((r) => r.promotor.trim().toUpperCase() === p.nome.trim().toUpperCase())?.uf;
                                 return (
-                                    <div key={p.id ?? p.nome} style={{ ...S.card, padding: 16, display: 'flex', alignItems: 'center', gap: 14 }}>
-                                        <div
-                                            style={{
-                                                width: 40,
-                                                height: 40,
-                                                borderRadius: '50%',
-                                                background: 'linear-gradient(135deg, #1d4ed8, #7c3aed)',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                fontSize: 16,
-                                                fontWeight: 700,
-                                                color: '#fff',
-                                                flexShrink: 0,
-                                            }}
-                                        >
-                                            {p.nome.charAt(0)}
-                                        </div>
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{ fontWeight: 600, fontSize: 13, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                {p.nome}
+                                    <div key={p.id ?? p.nome} style={{ ...S.card, padding: 16, display: 'flex', alignItems: 'flex-start', gap: 14, flexDirection: 'column' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
+                                            <div
+                                                style={{
+                                                    width: 40,
+                                                    height: 40,
+                                                    borderRadius: '50%',
+                                                    background: 'linear-gradient(135deg, #1d4ed8, #7c3aed)',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    fontSize: 16,
+                                                    fontWeight: 700,
+                                                    color: '#fff',
+                                                    flexShrink: 0,
+                                                }}
+                                            >
+                                                {p.nome.charAt(0)}
                                             </div>
-                                            <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 600, fontSize: 13, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                    {p.nome}
+                                                </div>
+                                                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                                                    {p.role} · {p.loja || 'Loja não informada'}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: 12, flexWrap: 'wrap' }}>
+                                            <div style={{ color: '#94a3b8', fontSize: 12 }}>
                                                 {p.cidade || <span style={{ fontStyle: 'italic' }}>Sem cidade</span>}
-                                                {p.id && <span style={{ marginLeft: 6, color: '#334155' }}>· #{p.id}</span>}
-                                                {uf && <span style={{ marginLeft: 6, fontWeight: 700, color: UF_CORES[uf] || '#94a3b8' }}>{uf}</span>}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: 4 }}>
+                                                <button
+                                                    onClick={() => setModalEditarPessoa({ ...p })}
+                                                    style={{
+                                                        background: '#1e3a5f',
+                                                        border: 'none',
+                                                        borderRadius: 6,
+                                                        padding: '6px 10px',
+                                                        color: '#60a5fa',
+                                                        fontSize: 12,
+                                                        cursor: 'pointer',
+                                                    }}
+                                                >
+                                                    ✏️ Editar
+                                                </button>
+                                                <button
+                                                    onClick={() => excluirPessoa(p.id)}
+                                                    style={{
+                                                        background: '#3f1515',
+                                                        border: 'none',
+                                                        borderRadius: 6,
+                                                        padding: '6px 10px',
+                                                        color: '#f87171',
+                                                        fontSize: 12,
+                                                        cursor: 'pointer',
+                                                    }}
+                                                >
+                                                    🗑️ Remover
+                                                </button>
                                             </div>
                                         </div>
-                                        <div style={{ textAlign: 'center', flexShrink: 0 }}>
-                                            <div style={{ fontSize: 20, fontWeight: 700, color: qtd > 0 ? '#22c55e' : '#334155' }}>{qtd}</div>
-                                            <div style={{ fontSize: 10, color: '#475569' }}>visitas</div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: 4 }}>
+                                            <span style={{ fontSize: 12, color: '#475569' }}>Visitas associadas: {qtd}</span>
                                         </div>
                                     </div>
                                 );
@@ -467,7 +738,7 @@ export default function App() {
                                 <option value="">Todos os estados</option>
                                 {ufsLojas.map((u) => (
                                     <option key={u} value={u}>
-                                        {u} ({TODAS_LOJAS.filter((l) => l.uf === u).length})
+                                        {u} ({lojasState.filter((l) => l.uf === u).length})
                                     </option>
                                 ))}
                             </select>
@@ -491,6 +762,24 @@ export default function App() {
                                 </button>
                             )}
                             <span style={{ color: '#475569', fontSize: 12 }}>{lojasFiltradas.length} lojas</span>
+                            <button
+                                onClick={() => {
+                                    setLojaForm({ rede: "", loja: "", uf: "" });
+                                    setModalLoja(true);
+                                }}
+                                style={{
+                                    background: 'linear-gradient(135deg, #3b82f6, #6366f1)',
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: 8,
+                                    padding: '8px 16px',
+                                    fontWeight: 600,
+                                    fontSize: 13,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                ＋ Nova Loja
+                            </button>
                         </div>
 
                         <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
@@ -509,34 +798,61 @@ export default function App() {
                                         cursor: 'pointer',
                                     }}
                                 >
-                                    {u} <span style={{ opacity: 0.7 }}>({TODAS_LOJAS.filter((l) => l.uf === u).length})</span>
+                                    {u} <span style={{ opacity: 0.7 }}>({lojasState.filter((l) => l.uf === u).length})</span>
                                 </button>
                             ))}
                         </div>
 
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px,1fr))', gap: 8 }}>
-                            {lojasFiltradas.map((l, i) => (
-                                <div key={i} style={{ ...S.card, padding: '11px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: UF_CORES[l.uf] || '#64748b', flexShrink: 0 }} />
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontSize: 13, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.loja}</div>
-                                        <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>{l.rede}</div>
+                            {lojasFiltradas.map((l, i) => {
+                                const count = pessoasPorLoja[l.loja] || 0;
+                                return (
+                                    <div key={i} style={{ ...S.card, padding: '11px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                            <div style={{ width: 10, height: 10, borderRadius: '50%', background: UF_CORES[l.uf] || '#64748b', flexShrink: 0 }} />
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: 13, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.loja}</div>
+                                                <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>{l.rede}</div>
+                                            </div>
+                                            <span
+                                                style={{
+                                                    background: `${UF_CORES[l.uf] || '#1e2d45'}22`,
+                                                    color: UF_CORES[l.uf] || '#64748b',
+                                                    fontSize: 11,
+                                                    fontWeight: 700,
+                                                    padding: '2px 8px',
+                                                    borderRadius: 4,
+                                                    flexShrink: 0,
+                                                }}
+                                            >
+                                                {l.uf}
+                                            </span>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                                            <span style={{ color: '#94a3b8', fontSize: 12 }}>{count} pessoa{count === 1 ? '' : 's'} associada{count === 1 ? '' : 's'}</span>
+                                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                                <button
+                                                    onClick={() => {
+                                                        setStoreFilter(l.loja);
+                                                        setTab('Pessoas');
+                                                    }}
+                                                    style={{
+                                                        background: '#1e3a5f',
+                                                        border: 'none',
+                                                        borderRadius: 6,
+                                                        padding: '6px 10px',
+                                                        color: '#60a5fa',
+                                                        fontSize: 12,
+                                                        cursor: 'pointer',
+                                                    }}
+                                                >
+                                                    Ver pessoas
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <span
-                                        style={{
-                                            background: `${UF_CORES[l.uf] || '#1e2d45'}22`,
-                                            color: UF_CORES[l.uf] || '#64748b',
-                                            fontSize: 11,
-                                            fontWeight: 700,
-                                            padding: '2px 8px',
-                                            borderRadius: 4,
-                                            flexShrink: 0,
-                                        }}
-                                    >
-                                        {l.uf}
-                                    </span>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 )}
@@ -544,15 +860,60 @@ export default function App() {
 
             {modalVisita && (
                 <Modal titulo="Nova Visita" onClose={() => setModalVisita(false)}>
-                    <FormVisita visita={novaVisita} setVisita={setNovaVisita} lojas={TODAS_LOJAS} promotores={PROMOTORES_DADOS} industrias={INDUSTRIAS} />
+                    <FormVisita visita={novaVisita} setVisita={setNovaVisita} lojas={lojasState} promotores={promotoresParaSelect} industrias={INDUSTRIAS} supervisores={supervisoresParaSelect} />
                     <BotoesModal onCancel={() => setModalVisita(false)} onSave={salvarVisita} labelSave="Salvar" />
                 </Modal>
             )}
 
             {modalEditar && (
                 <Modal titulo="Editar Roteiro" onClose={() => setModalEditar(null)}>
-                    <FormVisita visita={modalEditar} setVisita={setModalEditar} lojas={TODAS_LOJAS} promotores={PROMOTORES_DADOS} industrias={INDUSTRIAS} />
+                    <FormVisita visita={modalEditar} setVisita={setModalEditar} lojas={lojasState} promotores={promotoresParaSelect} industrias={INDUSTRIAS} supervisores={supervisoresParaSelect} />
                     <BotoesModal onCancel={() => setModalEditar(null)} onSave={salvarEdicao} labelSave="Salvar Alterações" />
+                </Modal>
+            )}
+
+            {modalPessoa && (
+                <Modal titulo="Nova Pessoa" onClose={() => setModalPessoa(false)}>
+                    <FormPessoa
+                        pessoa={pessoaForm}
+                        setPessoa={setPessoaForm}
+                        lojas={lojasState}
+                        modoManual={modoManual}
+                        setModoManual={setModoManual}
+                        manualInput={manualInput}
+                        setManualInput={setManualInput}
+                        onSave={salvarPessoa}
+                        onProcessManual={processarManual}
+                        onCancel={() => setModalPessoa(false)}
+                    />
+                </Modal>
+            )}
+
+            {modalEditarPessoa && (
+                <Modal titulo="Editar Pessoa" onClose={() => setModalEditarPessoa(null)}>
+                    <FormPessoa
+                        pessoa={modalEditarPessoa}
+                        setPessoa={setModalEditarPessoa}
+                        lojas={TODAS_LOJAS}
+                        modoManual={false}
+                        setModoManual={setModoManual}
+                        manualInput={manualInput}
+                        setManualInput={setManualInput}
+                        onSave={salvarEdicaoPessoa}
+                        onProcessManual={() => { }}
+                        onCancel={() => setModalEditarPessoa(null)}
+                    />
+                </Modal>
+            )}
+
+            {modalLoja && (
+                <Modal titulo="Nova Loja" onClose={() => setModalLoja(false)}>
+                    <FormLoja
+                        loja={lojaForm}
+                        setLoja={setLojaForm}
+                        onSave={salvarLoja}
+                        onCancel={() => setModalLoja(false)}
+                    />
                 </Modal>
             )}
 
