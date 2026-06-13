@@ -389,8 +389,17 @@ export default function App() {
             ];
             XLSX.utils.book_append_sheet(wb, wsLojas, "Lojas");
 
-            // Grava o arquivo
-            XLSX.writeFile(wb, `sistema-roteiros-completo-${new Date().toISOString().slice(0, 10)}.xlsx`);
+            // Grava o arquivo usando um Blob manual para máxima compatibilidade do navegador
+            const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `sistema-roteiros-completo-${new Date().toISOString().slice(0, 10)}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
             showToast("Excel exportado com sucesso!");
         } catch (error) {
             console.error("Erro ao exportar Excel:", error);
