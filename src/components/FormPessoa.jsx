@@ -66,6 +66,20 @@ export default function FormPessoa({ pessoa, setPessoa, lojas, modoManual, setMo
                             <option value="Supervisor">Supervisor</option>
                         </select>
                     </div>
+                    <div style={{ marginBottom: 16 }}>
+                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                            Telefone (WhatsApp)
+                        </label>
+                        <input
+                            value={pessoa.telefone || ''}
+                            onChange={(e) => setField('telefone', e.target.value)}
+                            placeholder="Ex: 5561992910841"
+                            style={{ width: '100%', background: '#0f1623', border: '1px solid #1e2d45', borderRadius: 8, padding: '10px 12px', color: '#e8edf3', fontSize: 13, outline: 'none' }}
+                        />
+                        <div style={{ marginTop: 4, color: '#475569', fontSize: 11 }}>
+                            Formato: código do país + DDD + número (sem espaços ou traços)
+                        </div>
+                    </div>
                 </>
             ) : (
                 <>

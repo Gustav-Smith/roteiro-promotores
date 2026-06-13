@@ -350,7 +350,9 @@ export default function App() {
         showToast("Arquivo Excel exportado com sucesso!");
     };
 
-    const compartilharWhatsApp = (promotorNome) => {
+    const compartilharWhatsApp = (pessoa) => {
+        const promotorNome = pessoa.nome;
+        const telefone = (pessoa.telefone || '').replace(/\D/g, '');
         const roteirosDoPromotor = roteiros.filter(
             (r) => r.promotor.trim().toUpperCase() === promotorNome.trim().toUpperCase()
         );
@@ -380,9 +382,14 @@ export default function App() {
         msg += `✅ Total: ${roteirosDoPromotor.length} loja(s)`;
 
         const encoded = encodeURIComponent(msg);
-        window.open(`https://wa.me/?text=${encoded}`, "_blank");
+        if (telefone) {
+            window.open(`https://wa.me/${telefone}?text=${encoded}`, "_blank");
+            showToast(`Enviando roteiro direto para ${promotorNome}!`);
+        } else {
+            window.open(`https://wa.me/?text=${encoded}`, "_blank");
+            showToast("Telefone não cadastrado — escolha o contato manualmente", "erro");
+        }
         setModalWhatsApp(false);
-        showToast("WhatsApp aberto!");
     };
 
     const S = {
@@ -1039,11 +1046,11 @@ export default function App() {
                                                 {p.nome}
                                             </div>
                                             <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-                                                {qtd} roteiro{qtd !== 1 ? 's' : ''} · {p.cidade || p.loja || 'Sem local'}
+                                                {qtd} roteiro{qtd !== 1 ? 's' : ''} · {p.telefone ? `📱 ${p.telefone}` : '⚠️ sem telefone'}
                                             </div>
                                         </div>
                                         <button
-                                            onClick={() => compartilharWhatsApp(p.nome)}
+                                            onClick={() => compartilharWhatsApp(p)}
                                             disabled={qtd === 0}
                                             style={{
                                                 background: qtd > 0 ? 'linear-gradient(135deg, #25d366, #128c7e)' : '#1e2d45',
@@ -1058,7 +1065,7 @@ export default function App() {
                                                 marginLeft: 12,
                                             }}
                                         >
-                                            📲 Enviar
+                                            {p.telefone ? '📲 Enviar direto' : '📋 Compartilhar'}
                                         </button>
                                     </div>
                                 );
