@@ -53,6 +53,7 @@ export default function App() {
     const [loadingSupabase, setLoadingSupabase] = useState(false);
     const [supabaseError, setSupabaseError] = useState(null);
     const [modalWhatsApp, setModalWhatsApp] = useState(false);
+    const [buscaPessoas, setBuscaPessoas] = useState("");
 
     const showToast = (msg, tipo = "ok") => {
         setToast({ msg, tipo });
@@ -134,10 +135,13 @@ export default function App() {
         [lojasState]
     );
 
-    const pessoasFiltradas = useMemo(
-        () => pessoas.filter((p) => !storeFilter || p.loja === storeFilter),
-        [pessoas, storeFilter]
-    );
+    const pessoasFiltradas = useMemo(() => {
+        return pessoas.filter((p) => {
+            const matchesStore = !storeFilter || p.loja === storeFilter;
+            const matchesName = !buscaPessoas.trim() || p.nome.toLowerCase().includes(buscaPessoas.toLowerCase());
+            return matchesStore && matchesName;
+        });
+    }, [pessoas, storeFilter, buscaPessoas]);
 
     const ufsRoteiros = [...new Set(roteiros.map((r) => r.uf))].sort();
     const pessoasPorLoja = useMemo(
@@ -460,26 +464,15 @@ export default function App() {
                 <div className="container">
                 {tab === 'Roteiros' && (
                     <div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 24 }}>
+                        <div className="cards-grid-4" style={{ marginBottom: 24 }}>
                             {[
                                 { label: 'Roteiros', valor: stats.total, icon: '📋', cor: '#3b82f6' },
                                 { label: 'Promotores', valor: stats.promotores, icon: '👥', cor: '#8b5cf6' },
                                 { label: 'Lojas', valor: stats.lojas, icon: '🏪', cor: '#06b6d4' },
                                 { label: 'Visitas/Semana', valor: stats.visitas, icon: '📅', cor: '#10b981' },
                             ].map((c) => (
-                                <div key={c.label} style={{ ...S.card, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
-                                    <div
-                                        style={{
-                                            width: 44,
-                                            height: 44,
-                                            background: `${c.cor}22`,
-                                            borderRadius: 10,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            fontSize: 20,
-                                        }}
-                                    >
+                                <div key={c.label} className="stat-card" style={{ background: `${c.cor}22`, border: `1px solid ${c.cor}44`, borderRadius: 12 }}>
+                                    <div className="stat-icon" style={{ background: `${c.cor}22` }}>
                                         {c.icon}
                                     </div>
                                     <div>
@@ -648,6 +641,21 @@ export default function App() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
                             <div style={{ color: '#64748b', fontSize: 13 }}>{pessoasFiltradas.length} pessoas cadastradas{storeFilter ? ` em ${storeFilter}` : ''}</div>
                             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <input
+                                    placeholder="🔍 Buscar por nome..."
+                                    value={buscaPessoas}
+                                    onChange={(e) => setBuscaPessoas(e.target.value)}
+                                    style={{
+                                        background: '#0f1623',
+                                        border: '1px solid #1e2d45',
+                                        borderRadius: 8,
+                                        padding: '8px 12px',
+                                        color: '#e8edf3',
+                                        fontSize: 13,
+                                        outline: 'none',
+                                        minWidth: 180
+                                    }}
+                                />
                                 <select
                                     value={storeFilter}
                                     onChange={(e) => setStoreFilter(e.target.value)}
@@ -939,7 +947,7 @@ export default function App() {
                     <FormPessoa
                         pessoa={modalEditarPessoa}
                         setPessoa={setModalEditarPessoa}
-                        lojas={TODAS_LOJAS}
+                        lojas={lojasState}
                         modoManual={false}
                         setModoManual={setModoManual}
                         manualInput={manualInput}

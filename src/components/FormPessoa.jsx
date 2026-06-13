@@ -82,6 +82,34 @@ export default function FormPessoa({ pessoa, setPessoa, lojas, modoManual, setMo
                             Formato: código do país + DDD + número (sem espaços ou traços)
                         </div>
                     </div>
+                    <div style={{ marginBottom: 16 }}>
+                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                            Loja Associada
+                        </label>
+                        <select
+                            value={pessoa.loja || ''}
+                            onChange={(e) => setField('loja', e.target.value)}
+                            style={{ width: '100%', background: '#0f1623', border: '1px solid #1e2d45', borderRadius: 8, padding: '10px 12px', color: '#e8edf3', fontSize: 13, outline: 'none' }}
+                        >
+                            <option value="">Nenhuma / Selecionar...</option>
+                            {lojas.map((l, i) => (
+                                <option key={i} value={l.loja}>
+                                    {l.loja} ({l.uf})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                            Cidade / Região
+                        </label>
+                        <input
+                            value={pessoa.cidade || ''}
+                            onChange={(e) => setField('cidade', e.target.value)}
+                            placeholder="Ex: PISTÃO SUL, GAMA, GOIANIA..."
+                            style={{ width: '100%', background: '#0f1623', border: '1px solid #1e2d45', borderRadius: 8, padding: '10px 12px', color: '#e8edf3', fontSize: 13, outline: 'none' }}
+                        />
+                    </div>
                 </>
             ) : (
                 <>
