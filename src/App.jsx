@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import * as XLSX from "xlsx";
 import Modal from "./components/Modal.jsx";
 import BotoesModal from "./components/BotoesModal.jsx";
 import FormVisita from "./components/FormVisita.jsx";
@@ -322,6 +323,32 @@ export default function App() {
     const limparFiltros = () => setFiltros({ promotor: "", supervisor: "", uf: "", dia: "", busca: "" });
     const temFiltro = Object.values(filtros).some(Boolean);
 
+    const exportarExcel = () => {
+        const dados = roteirosFiltrados.map((r) => ({
+            "Indústria": r.industria,
+            "Promotor": r.promotor,
+            "Loja": r.loja,
+            "UF": r.uf,
+            "Supervisor": r.supervisor,
+            "SEG": r.dias.SEG ? "✓" : "",
+            "TER": r.dias.TER ? "✓" : "",
+            "QUA": r.dias.QUA ? "✓" : "",
+            "QUI": r.dias.QUI ? "✓" : "",
+            "SEX": r.dias.SEX ? "✓" : "",
+            "SAB": r.dias.SAB ? "✓" : "",
+            "DOM": r.dias.DOM ? "✓" : "",
+        }));
+        const ws = XLSX.utils.json_to_sheet(dados);
+        ws["!cols"] = [
+            { wch: 20 }, { wch: 35 }, { wch: 40 }, { wch: 5 }, { wch: 15 },
+            { wch: 5 }, { wch: 5 }, { wch: 5 }, { wch: 5 }, { wch: 5 }, { wch: 5 }, { wch: 5 },
+        ];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Roteiros");
+        XLSX.writeFile(wb, `roteiro-promotores-${new Date().toISOString().slice(0, 10)}.xlsx`);
+        showToast("Arquivo Excel exportado com sucesso!");
+    };
+
     const S = {
         card: { background: "#161e2e", border: "1px solid #1e2d45", borderRadius: 12 },
         select: { background: "#0f1623", border: "1px solid #1e2d45", borderRadius: 8, padding: "8px 12px", color: "#e8edf3", fontSize: 13 },
@@ -372,21 +399,38 @@ export default function App() {
                             <div style={{ fontSize: 11, color: "#64748b" }}>DF · GO · MT · MS · TO · BA</div>
                         </div>
                     </div>
-                    <button
-                        onClick={() => setModalVisita(true)}
-                        style={{
-                            background: "linear-gradient(135deg, #3b82f6, #6366f1)",
-                            color: "#fff",
-                            border: "none",
-                            borderRadius: 8,
-                            padding: "8px 16px",
-                            fontWeight: 600,
-                            fontSize: 13,
-                            cursor: "pointer",
-                        }}
-                    >
-                        ＋ Nova Visita
-                    </button>
+                    <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                            onClick={exportarExcel}
+                            style={{
+                                background: "linear-gradient(135deg, #10b981, #059669)",
+                                color: "#fff",
+                                border: "none",
+                                borderRadius: 8,
+                                padding: "8px 16px",
+                                fontWeight: 600,
+                                fontSize: 13,
+                                cursor: "pointer",
+                            }}
+                        >
+                            📥 Exportar Excel
+                        </button>
+                        <button
+                            onClick={() => setModalVisita(true)}
+                            style={{
+                                background: "linear-gradient(135deg, #3b82f6, #6366f1)",
+                                color: "#fff",
+                                border: "none",
+                                borderRadius: 8,
+                                padding: "8px 16px",
+                                fontWeight: 600,
+                                fontSize: 13,
+                                cursor: "pointer",
+                            }}
+                        >
+                            ＋ Nova Visita
+                        </button>
+                    </div>
                 </div>
             </div>
 
