@@ -93,13 +93,13 @@ export default function App() {
                 if (filtros.promotor && r.promotor !== filtros.promotor) return false;
                 if (filtros.supervisor && r.supervisor !== filtros.supervisor) return false;
                 if (filtros.uf && r.uf !== filtros.uf) return false;
-                if (filtros.dia && !r.dias[filtros.dia]) return false;
+                if (filtros.dia && (!r.dias || !r.dias[filtros.dia])) return false;
                 if (filtros.busca) {
                     const b = filtros.busca.toLowerCase();
                     return (
-                        r.loja.toLowerCase().includes(b) ||
-                        r.promotor.toLowerCase().includes(b) ||
-                        r.industria.toLowerCase().includes(b)
+                        (r.loja || "").toLowerCase().includes(b) ||
+                        (r.promotor || "").toLowerCase().includes(b) ||
+                        (r.industria || "").toLowerCase().includes(b)
                     );
                 }
                 return true;
@@ -112,7 +112,7 @@ export default function App() {
             total: roteiros.length,
             promotores: new Set(roteiros.map((r) => r.promotor)).size,
             lojas: new Set(roteiros.map((r) => r.loja)).size,
-            visitas: roteiros.reduce((a, r) => a + Object.values(r.dias).filter(Boolean).length, 0),
+            visitas: roteiros.reduce((a, r) => a + Object.values(r.dias || {}).filter(Boolean).length, 0),
         }),
         [roteiros]
     );
@@ -138,7 +138,7 @@ export default function App() {
     const pessoasFiltradas = useMemo(() => {
         return pessoas.filter((p) => {
             const matchesStore = !storeFilter || p.loja === storeFilter;
-            const matchesName = !buscaPessoas.trim() || p.nome.toLowerCase().includes(buscaPessoas.toLowerCase());
+            const matchesName = !buscaPessoas.trim() || (p.nome || "").toLowerCase().includes(buscaPessoas.toLowerCase());
             return matchesStore && matchesName;
         });
     }, [pessoas, storeFilter, buscaPessoas]);
