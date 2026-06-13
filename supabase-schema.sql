@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS public.pessoas (
   nome text NOT NULL,
   loja text NOT NULL,
   role text NOT NULL,
-  cidade text DEFAULT ''
+  cidade text DEFAULT '',
+  telefone text DEFAULT ''
 );
 
 -- Opcional: tabela de roteiros/visitas para sincronização futura

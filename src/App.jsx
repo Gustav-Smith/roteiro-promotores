@@ -399,123 +399,65 @@ export default function App() {
     };
 
     return (
-        <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", minHeight: "100vh", background: "#0f1623", color: "#e8edf3" }}>
+        <div className="app-root">
             {toast && (
-                <div
-                    style={{
-                        position: "fixed",
-                        top: 20,
-                        right: 20,
-                        zIndex: 9999,
-                        background: toast.tipo === "erro" ? "#dc2626" : "#16a34a",
-                        color: "#fff",
-                        padding: "12px 20px",
-                        borderRadius: 8,
-                        boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
-                        fontSize: 14,
-                        fontWeight: 600,
-                    }}
-                >
+                <div className={`toast ${toast.tipo === "erro" ? "toast-error" : "toast-success"}`}>
                     {toast.msg}
                 </div>
             )}
 
-            <div style={{ background: "#161e2e", borderBottom: "1px solid #1e2d45", padding: "0 24px" }}>
-                <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 60 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <div
-                            style={{
-                                width: 36,
-                                height: 36,
-                                background: "linear-gradient(135deg, #3b82f6, #8b5cf6)",
-                                borderRadius: 8,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: 18,
-                            }}
-                        >
-                            🗺️
-                        </div>
+            <header className="header-bar">
+                <div className="container header">
+                    <div className="header-brand">
+                        <div className="header-logo">🗺️</div>
                         <div>
-                            <div style={{ fontWeight: 700, fontSize: 16, color: "#f0f4f8" }}>MK9 — Roteiro Promotores</div>
-                            <div style={{ fontSize: 11, color: "#64748b" }}>DF · GO · MT · MS · TO · BA</div>
+                            <div className="header-title">MK9 — Roteiro Promotores</div>
+                            <div className="header-subtitle">DF · GO · MT · MS · TO · BA</div>
                         </div>
                     </div>
-                    <div style={{ display: "flex", gap: 8 }}>
+                    <div className="header-actions actions-row">
                         <button
                             onClick={exportarExcel}
-                            style={{
-                                background: "linear-gradient(135deg, #10b981, #059669)",
-                                color: "#fff",
-                                border: "none",
-                                borderRadius: 8,
-                                padding: "8px 16px",
-                                fontWeight: 600,
-                                fontSize: 13,
-                                cursor: "pointer",
-                            }}
+                            className="btn btn-success"
                         >
                             📥 Exportar Excel
                         </button>
                         <button
                             onClick={() => setModalWhatsApp(true)}
-                            style={{
-                                background: "linear-gradient(135deg, #25d366, #128c7e)",
-                                color: "#fff",
-                                border: "none",
-                                borderRadius: 8,
-                                padding: "8px 16px",
-                                fontWeight: 600,
-                                fontSize: 13,
-                                cursor: "pointer",
-                            }}
+                            className="btn btn-whatsapp"
                         >
                             📲 WhatsApp
                         </button>
                         <button
                             onClick={() => setModalVisita(true)}
-                            style={{
-                                background: "linear-gradient(135deg, #3b82f6, #6366f1)",
-                                color: "#fff",
-                                border: "none",
-                                borderRadius: 8,
-                                padding: "8px 16px",
-                                fontWeight: 600,
-                                fontSize: 13,
-                                cursor: "pointer",
-                            }}
+                            className="btn btn-primary"
                         >
                             ＋ Nova Visita
                         </button>
                     </div>
                 </div>
-            </div>
+            </header>
 
-            <div style={{ background: "#161e2e", borderBottom: "1px solid #1e2d45", padding: "0 24px" }}>
-                <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", gap: 4 }}>
-                    {['Roteiros', 'Pessoas', 'Lojas'].map((t) => (
-                        <button
-                            key={t}
-                            onClick={() => setTab(t)}
-                            style={{
-                                background: tab === t ? 'rgba(59,130,246,0.15)' : 'transparent',
-                                color: tab === t ? '#60a5fa' : '#64748b',
-                                border: 'none',
-                                borderBottom: tab === t ? '2px solid #3b82f6' : '2px solid transparent',
-                                padding: '14px 18px',
-                                fontSize: 13,
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                            }}
-                        >
-                            {t}
-                        </button>
-                    ))}
+            <div className="tabs-bar">
+                <div className="container">
+                    <nav className="tabs" role="tablist">
+                        {['Roteiros', 'Pessoas', 'Lojas'].map((t) => (
+                            <button
+                                key={t}
+                                onClick={() => setTab(t)}
+                                className={`tab-btn ${tab === t ? "tab-active" : ""}`}
+                                role="tab"
+                                aria-selected={tab === t}
+                            >
+                                {t}
+                            </button>
+                        ))}
+                    </nav>
                 </div>
             </div>
 
-            <div style={{ maxWidth: 1280, margin: '0 auto', padding: 24 }}>
+            <main className="main-content">
+                <div className="container">
                 {tab === 'Roteiros' && (
                     <div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 24 }}>
@@ -958,7 +900,8 @@ export default function App() {
                         </div>
                     </div>
                 )}
-            </div>
+                </div>
+            </main>
 
             {modalVisita && (
                 <Modal titulo="Nova Visita" onClose={() => setModalVisita(false)}>
