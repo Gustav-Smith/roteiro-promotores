@@ -329,29 +329,73 @@ export default function App() {
     const temFiltro = Object.values(filtros).some(Boolean);
 
     const exportarExcel = () => {
-        const dados = roteirosFiltrados.map((r) => ({
-            "Indústria": r.industria,
-            "Promotor": r.promotor,
-            "Loja": r.loja,
-            "UF": r.uf,
-            "Supervisor": r.supervisor,
-            "SEG": r.dias.SEG ? "✓" : "",
-            "TER": r.dias.TER ? "✓" : "",
-            "QUA": r.dias.QUA ? "✓" : "",
-            "QUI": r.dias.QUI ? "✓" : "",
-            "SEX": r.dias.SEX ? "✓" : "",
-            "SAB": r.dias.SAB ? "✓" : "",
-            "DOM": r.dias.DOM ? "✓" : "",
-        }));
-        const ws = XLSX.utils.json_to_sheet(dados);
-        ws["!cols"] = [
-            { wch: 20 }, { wch: 35 }, { wch: 40 }, { wch: 5 }, { wch: 15 },
-            { wch: 5 }, { wch: 5 }, { wch: 5 }, { wch: 5 }, { wch: 5 }, { wch: 5 }, { wch: 5 },
-        ];
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Roteiros");
-        XLSX.writeFile(wb, `roteiro-promotores-${new Date().toISOString().slice(0, 10)}.xlsx`);
-        showToast("Arquivo Excel exportado com sucesso!");
+        try {
+            const wb = XLSX.utils.book_new();
+
+            // 1. Rotas por Promotor (Ordenado por nome de promotor)
+            const roteirosOrdenados = [...roteirosFiltrados].sort((a, b) =>
+                (a.promotor || "").localeCompare(b.promotor || "", "pt-BR")
+            );
+            const dadosRoteiros = roteirosOrdenados.map((r) => ({
+                "Indústria": r.industria || "",
+                "Promotor": r.promotor || "",
+                "Loja": r.loja || "",
+                "UF": r.uf || "",
+                "Supervisor": r.supervisor || "",
+                "SEG": r.dias?.SEG ? "✓" : "",
+                "TER": r.dias?.TER ? "✓" : "",
+                "QUA": r.dias?.QUA ? "✓" : "",
+                "QUI": r.dias?.QUI ? "✓" : "",
+                "SEX": r.dias?.SEX ? "✓" : "",
+                "SAB": r.dias?.SAB ? "✓" : "",
+                "DOM": r.dias?.DOM ? "✓" : "",
+            }));
+            const wsRoteiros = XLSX.utils.json_to_sheet(dadosRoteiros);
+            wsRoteiros["!cols"] = [
+                { wch: 20 }, { wch: 35 }, { wch: 40 }, { wch: 5 }, { wch: 15 },
+                { wch: 5 }, { wch: 5 }, { wch: 5 }, { wch: 5 }, { wch: 5 }, { wch: 5 }, { wch: 5 },
+            ];
+            XLSX.utils.book_append_sheet(wb, wsRoteiros, "Rotas por Promotor");
+
+            // 2. Promotores
+            const pessoasOrdenadas = [...pessoas].sort((a, b) =>
+                (a.nome || "").localeCompare(b.nome || "", "pt-BR")
+            );
+            const dadosPromotores = pessoasOrdenadas.map((p) => ({
+                "Nome": p.nome || "",
+                "Função": p.role || "",
+                "Cidade / Região": p.cidade || "",
+                "Loja Associada": p.loja || "",
+                "Telefone": p.telefone || "",
+            }));
+            const wsPromotores = XLSX.utils.json_to_sheet(dadosPromotores);
+            wsPromotores["!cols"] = [
+                { wch: 35 }, { wch: 15 }, { wch: 25 }, { wch: 40 }, { wch: 15 }
+            ];
+            XLSX.utils.book_append_sheet(wb, wsPromotores, "Promotores");
+
+            // 3. Lojas
+            const lojasOrdenadasList = [...lojasState].sort((a, b) =>
+                (a.rede || "").localeCompare(b.rede || "", "pt-BR") || (a.loja || "").localeCompare(b.loja || "", "pt-BR")
+            );
+            const dadosLojas = lojasOrdenadasList.map((l) => ({
+                "Rede": l.rede || "",
+                "Loja": l.loja || "",
+                "UF": l.uf || "",
+            }));
+            const wsLojas = XLSX.utils.json_to_sheet(dadosLojas);
+            wsLojas["!cols"] = [
+                { wch: 20 }, { wch: 40 }, { wch: 5 }
+            ];
+            XLSX.utils.book_append_sheet(wb, wsLojas, "Lojas");
+
+            // Grava o arquivo
+            XLSX.writeFile(wb, `sistema-roteiros-completo-${new Date().toISOString().slice(0, 10)}.xlsx`);
+            showToast("Excel exportado com sucesso!");
+        } catch (error) {
+            console.error("Erro ao exportar Excel:", error);
+            showToast("Falha ao exportar arquivo Excel", "erro");
+        }
     };
 
     const compartilharWhatsApp = (pessoa) => {
