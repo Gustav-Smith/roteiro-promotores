@@ -686,7 +686,7 @@ export default function App() {
                             {pessoasFiltradas.map((p) => {
                                 const qtd = roteiros.filter((r) => r.promotor.trim().toUpperCase() === p.nome.trim().toUpperCase()).length;
                                 return (
-                                    <div key={p.id ?? p.nome} style={{ ...S.card, padding: 16, display: 'flex', alignItems: 'flex-start', gap: 14, flexDirection: 'column' }}>
+                                    <div key={p.id ?? p.nome} className="person-card" style={{ ...S.card, padding: 16, display: 'flex', alignItems: 'flex-start', gap: 14, flexDirection: 'column' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
                                             <div
                                                 style={{
@@ -851,7 +851,7 @@ export default function App() {
                             {lojasFiltradas.map((l, i) => {
                                 const count = pessoasPorLoja[l.loja] || 0;
                                 return (
-                                    <div key={i} style={{ ...S.card, padding: '11px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                    <div key={i} className="store-card" style={{ ...S.card, padding: '11px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                             <div style={{ width: 10, height: 10, borderRadius: '50%', background: UF_CORES[l.uf] || '#64748b', flexShrink: 0 }} />
                                             <div style={{ flex: 1, minWidth: 0 }}>
