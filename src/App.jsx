@@ -52,6 +52,7 @@ export default function App() {
     const [lojaForm, setLojaForm] = useState({ rede: "", loja: "", uf: "" });
     const [loadingSupabase, setLoadingSupabase] = useState(false);
     const [supabaseError, setSupabaseError] = useState(null);
+    const [modalWhatsApp, setModalWhatsApp] = useState(false);
 
     const showToast = (msg, tipo = "ok") => {
         setToast({ msg, tipo });
@@ -349,6 +350,41 @@ export default function App() {
         showToast("Arquivo Excel exportado com sucesso!");
     };
 
+    const compartilharWhatsApp = (promotorNome) => {
+        const roteirosDoPromotor = roteiros.filter(
+            (r) => r.promotor.trim().toUpperCase() === promotorNome.trim().toUpperCase()
+        );
+        if (roteirosDoPromotor.length === 0) {
+            showToast("Nenhum roteiro encontrado para este promotor", "erro");
+            return;
+        }
+
+        const diasSemana = { SEG: "Segunda", TER: "Terça", QUA: "Quarta", QUI: "Quinta", SEX: "Sexta", SAB: "Sábado", DOM: "Domingo" };
+        let msg = `📋 *ROTEIRO SEMANAL*\n`;
+        msg += `👤 *${promotorNome}*\n`;
+        msg += `📅 Gerado em ${new Date().toLocaleDateString("pt-BR")}\n`;
+        msg += `━━━━━━━━━━━━━━━━━━\n\n`;
+
+        DIAS.forEach((dia) => {
+            const doDia = roteirosDoPromotor.filter((r) => r.dias[dia]);
+            if (doDia.length > 0) {
+                msg += `📌 *${diasSemana[dia]}*\n`;
+                doDia.forEach((r) => {
+                    msg += `  🏪 ${r.loja} (${r.uf})\n`;
+                    msg += `  🏭 ${r.industria}\n\n`;
+                });
+            }
+        });
+
+        msg += `━━━━━━━━━━━━━━━━━━\n`;
+        msg += `✅ Total: ${roteirosDoPromotor.length} loja(s)`;
+
+        const encoded = encodeURIComponent(msg);
+        window.open(`https://wa.me/?text=${encoded}`, "_blank");
+        setModalWhatsApp(false);
+        showToast("WhatsApp aberto!");
+    };
+
     const S = {
         card: { background: "#161e2e", border: "1px solid #1e2d45", borderRadius: 12 },
         select: { background: "#0f1623", border: "1px solid #1e2d45", borderRadius: 8, padding: "8px 12px", color: "#e8edf3", fontSize: 13 },
@@ -414,6 +450,21 @@ export default function App() {
                             }}
                         >
                             📥 Exportar Excel
+                        </button>
+                        <button
+                            onClick={() => setModalWhatsApp(true)}
+                            style={{
+                                background: "linear-gradient(135deg, #25d366, #128c7e)",
+                                color: "#fff",
+                                border: "none",
+                                borderRadius: 8,
+                                padding: "8px 16px",
+                                fontWeight: 600,
+                                fontSize: 13,
+                                cursor: "pointer",
+                            }}
+                        >
+                            📲 WhatsApp
                         </button>
                         <button
                             onClick={() => setModalVisita(true)}
@@ -958,6 +1009,62 @@ export default function App() {
                         onSave={salvarLoja}
                         onCancel={() => setModalLoja(false)}
                     />
+                </Modal>
+            )}
+
+            {modalWhatsApp && (
+                <Modal titulo="📲 Enviar Roteiro via WhatsApp" onClose={() => setModalWhatsApp(false)}>
+                    <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 12 }}>
+                            Selecione o promotor para enviar o roteiro:
+                        </div>
+                        <div style={{ maxHeight: 400, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {promotoresParaSelect.map((p) => {
+                                const qtd = roteiros.filter((r) => r.promotor.trim().toUpperCase() === p.nome.trim().toUpperCase()).length;
+                                return (
+                                    <div
+                                        key={p.id ?? p.nome}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            background: '#0f1623',
+                                            border: '1px solid #1e2d45',
+                                            borderRadius: 8,
+                                            padding: '10px 14px',
+                                        }}
+                                    >
+                                        <div style={{ minWidth: 0 }}>
+                                            <div style={{ fontSize: 13, color: '#e2e8f0', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {p.nome}
+                                            </div>
+                                            <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                                                {qtd} roteiro{qtd !== 1 ? 's' : ''} · {p.cidade || p.loja || 'Sem local'}
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => compartilharWhatsApp(p.nome)}
+                                            disabled={qtd === 0}
+                                            style={{
+                                                background: qtd > 0 ? 'linear-gradient(135deg, #25d366, #128c7e)' : '#1e2d45',
+                                                color: qtd > 0 ? '#fff' : '#475569',
+                                                border: 'none',
+                                                borderRadius: 6,
+                                                padding: '6px 14px',
+                                                fontSize: 12,
+                                                fontWeight: 600,
+                                                cursor: qtd > 0 ? 'pointer' : 'not-allowed',
+                                                flexShrink: 0,
+                                                marginLeft: 12,
+                                            }}
+                                        >
+                                            📲 Enviar
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
                 </Modal>
             )}
 
