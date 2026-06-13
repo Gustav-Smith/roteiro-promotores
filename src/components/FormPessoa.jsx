@@ -1,46 +1,48 @@
-export default function FormPessoa({ pessoa, setPessoa, lojas, modoManual, setModoManual, manualInput, setManualInput, onSave, onProcessManual, onCancel }) {
+export default function FormPessoa({ pessoa, setPessoa, lojas, modoManual, setModoManual, manualInput, setManualInput, onSave, onProcessManual, onCancel, isEdit = false }) {
     const lojaSelecionada = lojas.find((l) => l.loja === pessoa.loja);
 
     const setField = (key, value) => setPessoa((prev) => ({ ...prev, [key]: value }));
 
     return (
         <div>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
-                <button
-                    type="button"
-                    onClick={() => setModoManual(false)}
-                    style={{
-                        flex: 1,
-                        padding: '10px 14px',
-                        borderRadius: 10,
-                        border: '1px solid #1e2d45',
-                        background: modoManual ? 'transparent' : '#1d4ed8',
-                        color: modoManual ? '#94a3b8' : '#fff',
-                        cursor: 'pointer',
-                        fontWeight: 700,
-                    }}
-                >
-                    Formulário rápido
-                </button>
-                <button
-                    type="button"
-                    onClick={() => setModoManual(true)}
-                    style={{
-                        flex: 1,
-                        padding: '10px 14px',
-                        borderRadius: 10,
-                        border: '1px solid #1e2d45',
-                        background: modoManual ? '#1d4ed8' : 'transparent',
-                        color: modoManual ? '#fff' : '#94a3b8',
-                        cursor: 'pointer',
-                        fontWeight: 700,
-                    }}
-                >
-                    Preenchimento manual
-                </button>
-            </div>
+            {!isEdit && (
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+                    <button
+                        type="button"
+                        onClick={() => setModoManual(false)}
+                        style={{
+                            flex: 1,
+                            padding: '10px 14px',
+                            borderRadius: 10,
+                            border: '1px solid #1e2d45',
+                            background: modoManual ? 'transparent' : '#1d4ed8',
+                            color: modoManual ? '#94a3b8' : '#fff',
+                            cursor: 'pointer',
+                            fontWeight: 700,
+                        }}
+                    >
+                        Formulário rápido
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setModoManual(true)}
+                        style={{
+                            flex: 1,
+                            padding: '10px 14px',
+                            borderRadius: 10,
+                            border: '1px solid #1e2d45',
+                            background: modoManual ? '#1d4ed8' : 'transparent',
+                            color: modoManual ? '#fff' : '#94a3b8',
+                            cursor: 'pointer',
+                            fontWeight: 700,
+                        }}
+                    >
+                        Preenchimento manual
+                    </button>
+                </div>
+            )}
 
-            {!modoManual ? (
+            {(isEdit || !modoManual) ? (
                 <>
                     <div style={{ marginBottom: 16 }}>
                         <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
@@ -115,7 +117,7 @@ export default function FormPessoa({ pessoa, setPessoa, lojas, modoManual, setMo
                 >
                     Cancelar
                 </button>
-                {!modoManual ? (
+                {(isEdit || !modoManual) ? (
                     <button
                         onClick={onSave}
                         style={{ flex: 2, background: 'linear-gradient(135deg, #3b82f6, #6366f1)', color: '#fff', border: 'none', borderRadius: 10, padding: '12px 0', fontWeight: 700, cursor: 'pointer' }}

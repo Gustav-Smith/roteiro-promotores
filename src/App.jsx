@@ -947,6 +947,7 @@ export default function App() {
                         onSave={salvarEdicaoPessoa}
                         onProcessManual={() => { }}
                         onCancel={() => setModalEditarPessoa(null)}
+                        isEdit={true}
                     />
                 </Modal>
             )}
