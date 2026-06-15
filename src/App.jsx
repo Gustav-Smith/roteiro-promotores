@@ -5,16 +5,19 @@ import BotoesModal from "./components/BotoesModal.jsx";
 import FormVisita from "./components/FormVisita.jsx";
 import FormPessoa from "./components/FormPessoa.jsx";
 import FormLoja from "./components/FormLoja.jsx";
-import { supabase } from "./supabaseClient.js";
+import { loadAllData, loadEntity, DIAS, DIAS_LABELS, UF_CORES } from "./dataLoader.js";
+import { PROMOTORES_DADOS, ROTEIROS_INICIAIS, TODAS_LOJAS, INDUSTRIAS } from "./data.js";
 import {
-    PROMOTORES_DADOS,
-    INDUSTRIAS,
-    TODAS_LOJAS,
-    DIAS,
-    DIAS_LABELS,
-    UF_CORES,
-    ROTEIROS_INICIAIS,
-} from "./data.js";
+    checkSheetsAvailable,
+    checkWriteAvailable,
+    savePessoaToSheets,
+    deletePessoaFromSheets,
+    saveVisitaToSheets,
+    deleteVisitaFromSheets,
+    saveLojaToSheets,
+    saveMultiplePessoasToSheets,
+    saveMultipleVisitasToSheets
+} from "./sheets.js";
 
 const nome2 = (n) => {
     const p = n.trim().split(" ");
@@ -36,10 +39,10 @@ export default function App() {
         PROMOTORES_DADOS.map((p) => ({ ...p, role: "Promotor", loja: p.loja || "", cidade: p.cidade || "" }))
     );
     const [novaVisita, setNovaVisita] = useState({
-        industria: "",
-        loja: "",
+        industrias: [],
+        lojas: [],
         uf: "",
-        promotor: "",
+        promotores: [],
         supervisor: "LUCAS",
         dias: { SEG: false, TER: false, QUA: false, QUI: false, SEX: false, SAB: false, DOM: false },
     });
@@ -48,12 +51,14 @@ export default function App() {
     const [filtroUFLojas, setFiltroUFLojas] = useState("");
     const [storeFilter, setStoreFilter] = useState("");
     const [lojasState, setLojasState] = useState(TODAS_LOJAS);
+    const [industriasState, setIndustriasState] = useState(INDUSTRIAS);
     const [modalLoja, setModalLoja] = useState(false);
     const [lojaForm, setLojaForm] = useState({ rede: "", loja: "", uf: "" });
     const [loadingSupabase, setLoadingSupabase] = useState(false);
     const [supabaseError, setSupabaseError] = useState(null);
     const [modalWhatsApp, setModalWhatsApp] = useState(false);
     const [buscaPessoas, setBuscaPessoas] = useState("");
+    const [dataSource, setDataSource] = useState('local');
 
     const showToast = (msg, tipo = "ok") => {
         setToast({ msg, tipo });
@@ -65,20 +70,23 @@ export default function App() {
             setLoadingSupabase(true);
             setSupabaseError(null);
             try {
-                const { data: lojas, error: lojasError } = await supabase.from("lojas").select("*").order("id", { ascending: true });
-                if (lojasError) throw lojasError;
-                if (lojas && lojas.length > 0) setLojasState(lojas);
-
-                const { data: pessoas, error: pessoasError } = await supabase.from("pessoas").select("*").order("nome", { ascending: true });
-                if (pessoasError) throw pessoasError;
-                if (pessoas && pessoas.length > 0) setPessoas(pessoas);
-
-                const { data: roteirosData, error: roteirosError } = await supabase.from("roteiros").select("*").order("id", { ascending: true });
-                if (roteirosError) throw roteirosError;
-                if (roteirosData && roteirosData.length > 0) setRoteiros(roteirosData);
+                const data = await loadAllData();
+                setLojasState(data.lojas);
+                setPessoas(data.pessoas);
+                setRoteiros(data.roteiros);
+                if (data.industrias) setIndustriasState(data.industrias);
+                setDataSource(data.source);
+                showToast(`Dados carregados: ${data.source === 'sheets' ? 'Google Sheets (Planilha)' : 'Local (data.js)'}`, 'ok');
             } catch (error) {
-                setSupabaseError(error.message || "Falha ao conectar ao Supabase");
-                showToast("Não foi possível carregar dados do Supabase. Dados locais serão usados.", "erro");
+                setSupabaseError(error.message || "Falha ao carregar dados");
+                showToast("Erro ao carregar dados. Usando fallback local.", "erro");
+                // Fallback final hardcoded
+                const { TODAS_LOJAS, PROMOTORES_DADOS, ROTEIROS_INICIAIS, INDUSTRIAS } = await import('./data.js');
+                setLojasState(TODAS_LOJAS);
+                setPessoas(PROMOTORES_DADOS.map(p => ({ ...p, role: 'Promotor', telefone: '', loja: p.loja || '' })));
+                setRoteiros(ROTEIROS_INICIAIS);
+                setIndustriasState(INDUSTRIAS);
+                setDataSource('local');
             } finally {
                 setLoadingSupabase(false);
             }
@@ -86,6 +94,37 @@ export default function App() {
 
         carregarDados();
     }, []);
+
+    useEffect(() => {
+        const syncInterval = setInterval(async () => {
+            try {
+                const data = await loadAllData();
+                setLojasState((prev) => {
+                    const nextVal = data.lojas || [];
+                    return JSON.stringify(prev) !== JSON.stringify(nextVal) ? nextVal : prev;
+                });
+                setPessoas((prev) => {
+                    const nextVal = data.pessoas || [];
+                    return JSON.stringify(prev) !== JSON.stringify(nextVal) ? nextVal : prev;
+                });
+                setRoteiros((prev) => {
+                    const nextVal = data.roteiros || [];
+                    return JSON.stringify(prev) !== JSON.stringify(nextVal) ? nextVal : prev;
+                });
+                if (data.industrias) {
+                    setIndustriasState((prev) => {
+                        const nextVal = data.industrias || [];
+                        return JSON.stringify(prev) !== JSON.stringify(nextVal) ? nextVal : prev;
+                    });
+                }
+                setDataSource(data.source);
+            } catch (e) {
+                console.warn("[Background Sync] Erro na sincronização automática:", e.message);
+            }
+        }, 5000);
+
+        return () => clearInterval(syncInterval);
+    }, [pessoas, lojasState, roteiros, industriasState]);
 
     const roteirosFiltrados = useMemo(
         () =>
@@ -158,68 +197,320 @@ export default function App() {
     const promotoresParaSelect = pessoas.filter((p) => p.role === "Promotor");
     const supervisoresParaSelect = pessoas.filter((p) => p.role === "Supervisor");
 
-    const salvarVisita = async () => {
-        if (!novaVisita.industria || !novaVisita.loja || !novaVisita.promotor) {
+    const validarDadosVisita = (visita, isEditing = false) => {
+        if (!visita.industria || !visita.loja || !visita.promotor || !visita.supervisor) {
             showToast("Preencha todos os campos obrigatórios", "erro");
+            return false;
+        }
+
+        // Valida Promotor
+        const promotorValido = pessoas.some(
+            (p) => p.nome.trim().toUpperCase() === visita.promotor.trim().toUpperCase()
+        );
+        if (!promotorValido) {
+            showToast(`Erro: Promotor "${visita.promotor}" não cadastrado na aba PROMOTORES.`, "erro");
+            return false;
+        }
+
+        // Valida Loja
+        const lojaValida = lojasState.some(
+            (l) => l.loja.trim().toUpperCase() === visita.loja.trim().toUpperCase()
+        );
+        if (!lojaValida) {
+            showToast(`Erro: Loja "${visita.loja}" não cadastrada na aba LOJAS.`, "erro");
+            return false;
+        }
+
+        // Valida Indústria
+        const industriaValida = industriasState.some(
+            (i) => i.trim().toUpperCase() === visita.industria.trim().toUpperCase()
+        );
+        if (!industriaValida) {
+            showToast(`Erro: Indústria "${visita.industria}" não cadastrada na aba INDUSTRIA.`, "erro");
+            return false;
+        }
+
+        // Valida Supervisor
+        const supervisorValido = ["LUCAS", "ALEXANDRE"].includes(visita.supervisor.trim().toUpperCase());
+        if (!supervisorValido) {
+            showToast(`Erro: Supervisor "${visita.supervisor}" inválido (deve ser LUCAS ou ALEXANDRE).`, "erro");
+            return false;
+        }
+
+        // Se for criação de nova visita, valida duplicidade
+        if (!isEditing) {
+            const jaExiste = roteiros.some(
+                (r) =>
+                    r.promotor.trim().toUpperCase() === visita.promotor.trim().toUpperCase() &&
+                    r.loja.trim().toUpperCase() === visita.loja.trim().toUpperCase() &&
+                    r.industria.trim().toUpperCase() === visita.industria.trim().toUpperCase() &&
+                    r.supervisor.trim().toUpperCase() === visita.supervisor.trim().toUpperCase()
+            );
+            if (jaExiste) {
+                showToast("Esta visita já está cadastrada para o promotor nesta loja e indústria.", "erro");
+                return false;
+            }
+        }
+
+        return true;
+    };
+
+    const salvarVisita = async () => {
+        const selectedInds = novaVisita.industrias || [];
+        const selectedLojas = novaVisita.lojas || [];
+        const selectedPromos = novaVisita.promotores || [];
+        const temDias = Object.values(novaVisita.dias || {}).some(Boolean);
+
+        if (selectedInds.length === 0 || selectedLojas.length === 0 || selectedPromos.length === 0) {
+            showToast("Selecione pelo menos 1 Promotor, 1 Loja e 1 Indústria.", "erro");
             return;
         }
-        const dadosVisita = { ...novaVisita };
-        const { data, error } = await supabase.from("roteiros").insert([dadosVisita]).select().single();
-        if (error) {
-            console.warn(error);
-            setRoteiros((p) => [...p, { ...dadosVisita, id: Date.now() }]);
-            showToast("Visita adicionada localmente (Supabase indisponível)");
-        } else {
-            setRoteiros((p) => [...p, data]);
-            showToast("Visita adicionada!");
+
+        if (!temDias) {
+            showToast("Selecione pelo menos 1 Dia da Semana.", "erro");
+            return;
         }
-        setNovaVisita({
-            industria: "",
-            loja: "",
-            uf: "",
-            promotor: "",
-            supervisor: "LUCAS",
-            dias: { SEG: false, TER: false, QUA: false, QUI: false, SEX: false, SAB: false, DOM: false },
+
+        // Calcula produto cartesiano de todas as combinações
+        const combinacoes = [];
+        for (const promotor of selectedPromos) {
+            for (const loja of selectedLojas) {
+                const lojaObj = lojasState.find(l => l.loja.trim().toUpperCase() === loja.trim().toUpperCase());
+                const uf = lojaObj ? lojaObj.uf : "";
+                
+                for (const industria of selectedInds) {
+                    combinacoes.push({
+                        industria,
+                        loja,
+                        uf,
+                        promotor,
+                        supervisor: novaVisita.supervisor,
+                        dias: { ...novaVisita.dias }
+                    });
+                }
+            }
+        }
+
+        // Filtra combinações que já existem para evitar duplicidade
+        const novasCombinacoes = combinacoes.filter(c => {
+            const jaExiste = roteiros.some(r => 
+                r.promotor.trim().toUpperCase() === c.promotor.trim().toUpperCase() &&
+                r.loja.trim().toUpperCase() === c.loja.trim().toUpperCase() &&
+                r.industria.trim().toUpperCase() === c.industria.trim().toUpperCase() &&
+                r.supervisor.trim().toUpperCase() === c.supervisor.trim().toUpperCase()
+            );
+            return !jaExiste;
         });
-        setModalVisita(false);
+
+        if (novasCombinacoes.length === 0) {
+            showToast("Todas as visitas selecionadas já existem no roteiro.", "erro");
+            return;
+        }
+
+        setLoadingSupabase(true);
+        try {
+            const isAvailable = checkWriteAvailable();
+            if (isAvailable) {
+                const res = await saveMultipleVisitasToSheets(novasCombinacoes);
+                const listSaved = res.data;
+
+                // Valida se a resposta contém dados reais antes de considerar sucesso
+                if (!listSaved || !Array.isArray(listSaved) || listSaved.length === 0) {
+                    throw new Error(
+                        `A planilha não retornou as visitas salvas. Verifique o Apps Script e tente novamente. ` +
+                        `(${novasCombinacoes.length} visita(s) tentadas)`
+                    );
+                }
+
+                setRoteiros((p) => [...p, ...listSaved]);
+                showToast(`${listSaved.length} visita(s) adicionadas na planilha com sucesso!`);
+            } else {
+                const listSavedLocal = novasCombinacoes.map((c, i) => ({
+                    ...c,
+                    id: Date.now() + i
+                }));
+                setRoteiros((p) => [...p, ...listSavedLocal]);
+                showToast(`${listSavedLocal.length} visita(s) adicionadas! (Planilha: configure VITE_GOOGLE_SCRIPT_URL para sincronizar)`);
+            }
+
+            // ✅ Reset APENAS em caso de sucesso — nunca no catch ou finally
+            setNovaVisita({
+                industrias: [],
+                lojas: [],
+                uf: "",
+                promotores: [],
+                supervisor: "LUCAS",
+                dias: { SEG: false, TER: false, QUA: false, QUI: false, SEX: false, SAB: false, DOM: false },
+            });
+            setModalVisita(false);
+        } catch (error) {
+            console.error("[salvarVisita] Erro:", error);
+            // ❌ NÃO reseta o formulário — usuário mantém todos os dados preenchidos
+            // ❌ NÃO fecha o modal — usuário pode corrigir e tentar novamente
+            showToast(
+                `Erro ao salvar: ${error.message || "Falha desconhecida"}. Seus dados foram mantidos — corrija e tente novamente.`,
+                "erro"
+            );
+        } finally {
+            setLoadingSupabase(false);
+        }
+    };
+
+    const salvarEdicao = async () => {
+        if (!modalEditar) return;
+        
+        // Encontra o UF correspondente da loja automaticamente
+        const lojaObj = lojasState.find(l => l.loja.trim().toUpperCase() === modalEditar.loja.trim().toUpperCase());
+        const uf = lojaObj ? lojaObj.uf : "";
+        const dadosEdicao = { ...modalEditar, uf };
+
+        if (!validarDadosVisita(dadosEdicao, true)) return;
+
+        setLoadingSupabase(true);
+        try {
+            const isAvailable = checkWriteAvailable();
+            if (isAvailable) {
+                const res = await saveVisitaToSheets(dadosEdicao);
+                setRoteiros((p) => p.map((r) => (r.id === dadosEdicao.id ? res.data : r)));
+                showToast("Roteiro atualizado na planilha!");
+            } else {
+                setRoteiros((p) => p.map((r) => (r.id === dadosEdicao.id ? dadosEdicao : r)));
+                showToast("Roteiro atualizado localmente (Planilha não configurada)");
+            }
+            setModalEditar(null);
+        } catch (error) {
+            console.error(error);
+            showToast("Erro ao atualizar roteiro na planilha: " + error.message, "erro");
+        } finally {
+            setLoadingSupabase(false);
+        }
+    };
+
+    const excluir = async (id) => {
+        const visitaObj = roteiros.find(r => r.id === id);
+        if (!visitaObj) return;
+
+        setLoadingSupabase(true);
+        try {
+            const isAvailable = checkWriteAvailable();
+            if (isAvailable) {
+                await deleteVisitaFromSheets({ id, supervisor: visitaObj.supervisor });
+                setRoteiros((p) => p.filter((r) => r.id !== id));
+                showToast("Visita removida da planilha!");
+            } else {
+                setRoteiros((p) => p.filter((r) => r.id !== id));
+                showToast("Roteiro removido localmente (Planilha não configurada)");
+            }
+        } catch (error) {
+            console.error(error);
+            showToast("Erro ao remover visita da planilha: " + error.message, "erro");
+        } finally {
+            setLoadingSupabase(false);
+        }
+    };
+
+    const validarPessoa = (pessoa, isEditing = false) => {
+        if (!pessoa.nome || !pessoa.role) {
+            showToast("Preencha nome e função", "erro");
+            return false;
+        }
+
+        // Se houver loja associada, valida se ela existe
+        if (pessoa.loja) {
+            const lojaValida = lojasState.some(
+                (l) => l.loja.trim().toUpperCase() === pessoa.loja.trim().toUpperCase()
+            );
+            if (!lojaValida) {
+                showToast(`Erro: Loja "${pessoa.loja}" não cadastrada na aba LOJAS.`, "erro");
+                return false;
+            }
+        }
+
+        // Se for novo cadastro, valida duplicidade de nome
+        if (!isEditing) {
+            const jaExiste = pessoas.some(
+                (p) => p.nome.trim().toUpperCase() === pessoa.nome.trim().toUpperCase()
+            );
+            if (jaExiste) {
+                showToast(`Erro: Já existe um promotor/supervisor com o nome "${pessoa.nome}".`, "erro");
+                return false;
+            }
+        }
+
+        return true;
     };
 
     const salvarPessoa = async () => {
-        if (!pessoaForm.nome || !pessoaForm.role) {
-            showToast("Preencha nome e função", "erro");
-            return;
+        const novaPessoa = { ...pessoaForm, cidade: pessoaForm.cidade || "", observacao: pessoaForm.observacao || "" };
+        if (!validarPessoa(novaPessoa, false)) return;
+
+        setLoadingSupabase(true);
+        try {
+            const isAvailable = checkWriteAvailable();
+            if (isAvailable) {
+                const res = await savePessoaToSheets(novaPessoa);
+                setPessoas((p) => [...p, res.data]);
+                showToast("Pessoa adicionada na planilha!");
+            } else {
+                const localPessoa = { ...novaPessoa, id: Date.now() };
+                setPessoas((p) => [...p, localPessoa]);
+                showToast("Pessoa adicionada localmente (Planilha não configurada)");
+            }
+            setPessoaForm({ nome: "", loja: "", role: "Promotor" });
+            setModalPessoa(false);
+        } catch (error) {
+            console.error(error);
+            showToast("Erro ao salvar pessoa na planilha: " + error.message, "erro");
+        } finally {
+            setLoadingSupabase(false);
         }
-        const novaPessoa = { ...pessoaForm, cidade: pessoaForm.cidade || "" };
-        const { data, error } = await supabase.from("pessoas").insert([novaPessoa]).select().single();
-        if (error) {
-            console.warn(error);
-            setPessoas((p) => [...p, { ...novaPessoa, id: Date.now() }]);
-            showToast("Pessoa adicionada localmente (Supabase indisponível)");
-        } else {
-            setPessoas((p) => [...p, data]);
-            showToast("Pessoa adicionada!");
-        }
-        setPessoaForm({ nome: "", loja: "", role: "Promotor" });
-        setModalPessoa(false);
     };
 
     const salvarEdicaoPessoa = async () => {
         if (!modalEditarPessoa) return;
-        const { data, error } = await supabase
-            .from("pessoas")
-            .update({ ...modalEditarPessoa })
-            .eq("id", modalEditarPessoa.id)
-            .select()
-            .single();
-        if (error) {
-            console.warn(error);
-            setPessoas((p) => p.map((item) => (item.id === modalEditarPessoa.id ? modalEditarPessoa : item)));
-            showToast("Alteração salva localmente (Supabase indisponível)");
-        } else {
-            setPessoas((p) => p.map((item) => (item.id === modalEditarPessoa.id ? data : item)));
-            showToast("Pessoa atualizada!");
+        if (!validarPessoa(modalEditarPessoa, true)) return;
+
+        setLoadingSupabase(true);
+        try {
+            const isAvailable = checkWriteAvailable();
+            if (isAvailable) {
+                const res = await savePessoaToSheets(modalEditarPessoa);
+                setPessoas((p) => p.map((item) => (item.id === modalEditarPessoa.id ? res.data : item)));
+                showToast("Pessoa atualizada na planilha!");
+            } else {
+                setPessoas((p) => p.map((item) => (item.id === modalEditarPessoa.id ? modalEditarPessoa : item)));
+                showToast("Pessoa atualizada localmente (Planilha não configurada)");
+            }
+            setModalEditarPessoa(null);
+        } catch (error) {
+            console.error(error);
+            showToast("Erro ao atualizar pessoa na planilha: " + error.message, "erro");
+        } finally {
+            setLoadingSupabase(false);
         }
-        setModalEditarPessoa(null);
+    };
+
+    const excluirPessoa = async (id) => {
+        const pessoaObj = pessoas.find(p => p.id === id);
+        if (!pessoaObj) return;
+
+        setLoadingSupabase(true);
+        try {
+            const isAvailable = checkWriteAvailable();
+            if (isAvailable) {
+                await deletePessoaFromSheets({ id, nome: pessoaObj.nome });
+                setPessoas((p) => p.filter((item) => item.id !== id));
+                showToast("Pessoa removida da planilha!");
+            } else {
+                setPessoas((p) => p.filter((item) => item.id !== id));
+                showToast("Pessoa removida localmente (Planilha não configurada)");
+            }
+        } catch (error) {
+            console.error(error);
+            showToast("Erro ao remover pessoa da planilha: " + error.message, "erro");
+        } finally {
+            setLoadingSupabase(false);
+        }
     };
 
     const processarManual = async () => {
@@ -235,42 +526,58 @@ export default function App() {
             showToast("Nenhuma linha válida encontrada", "erro");
             return;
         }
-        const novas = linhas.map((linha, index) => {
+
+        const novas = [];
+        for (let i = 0; i < linhas.length; i++) {
+            const linha = linhas[i];
             const partes = linha.split("|").map((texto) => texto.trim());
             const nome = partes[0] || "";
             const role = partes[1] ? partes[1].charAt(0).toUpperCase() + partes[1].slice(1).toLowerCase() : "Promotor";
-            return {
-                id: Date.now() + index,
+            
+            const pObj = {
+                id: Date.now() + i,
                 nome,
                 role: role === "Supervisor" ? "Supervisor" : "Promotor",
                 loja: pessoaForm.loja || "",
                 cidade: "",
             };
-        });
-        const { error } = await supabase.from("pessoas").insert(novas);
-        if (error) {
-            console.warn(error);
-            setPessoas((p) => [...p, ...novas]);
-            showToast(`${novas.length} pessoas adicionadas localmente (Supabase indisponível)`);
-        } else {
-            setPessoas((p) => [...p, ...novas]);
-            showToast(`${novas.length} pessoas adicionadas!`);
-        }
-        setManualInput("");
-        setModoManual(false);
-        setPessoaForm({ nome: "", loja: "", role: "Promotor" });
-        setModalPessoa(false);
-    };
 
-    const excluirPessoa = async (id) => {
-        const { error } = await supabase.from("pessoas").delete().eq("id", id);
-        if (error) {
-            console.warn(error);
-            setPessoas((p) => p.filter((item) => item.id !== id));
-            showToast("Pessoa removida localmente (Supabase indisponível)");
-        } else {
-            setPessoas((p) => p.filter((item) => item.id !== id));
-            showToast("Pessoa removida");
+            // Valida duplicidade individual
+            const jaExiste = pessoas.some(p => p.nome.trim().toUpperCase() === nome.trim().toUpperCase()) ||
+                             novas.some(n => n.nome.trim().toUpperCase() === nome.trim().toUpperCase());
+            if (jaExiste) {
+                showToast(`Aviso: Promotor "${nome}" já existe e foi ignorado.`, "erro");
+                continue;
+            }
+
+            novas.push(pObj);
+        }
+
+        if (novas.length === 0) {
+            showToast("Nenhum novo promotor válido para cadastrar.", "erro");
+            return;
+        }
+
+        setLoadingSupabase(true);
+        try {
+            const isAvailable = checkWriteAvailable();
+            if (isAvailable) {
+                await saveMultiplePessoasToSheets(novas);
+                setPessoas((p) => [...p, ...novas]);
+                showToast(`${novas.length} pessoas adicionadas na planilha com sucesso!`);
+            } else {
+                setPessoas((p) => [...p, ...novas]);
+                showToast(`${novas.length} pessoas adicionadas localmente (Planilha não configurada)`);
+            }
+        } catch (error) {
+            console.error(error);
+            showToast("Erro ao processar lista manual na planilha: " + error.message, "erro");
+        } finally {
+            setLoadingSupabase(false);
+            setManualInput("");
+            setModoManual(false);
+            setPessoaForm({ nome: "", loja: "", role: "Promotor" });
+            setModalPessoa(false);
         }
     };
 
@@ -280,48 +587,35 @@ export default function App() {
             return;
         }
         const novaLoja = { ...lojaForm };
-        const { data, error } = await supabase.from("lojas").insert([novaLoja]).select().single();
-        if (error) {
-            console.warn(error);
-            setLojasState((p) => [...p, { ...novaLoja, id: Date.now() }]);
-            showToast("Loja adicionada localmente (Supabase indisponível)");
-        } else {
-            setLojasState((p) => [...p, data]);
-            showToast("Loja adicionada!");
-        }
-        setLojaForm({ rede: "", loja: "", uf: "" });
-        setModalLoja(false);
-    };
 
-    const excluir = async (id) => {
-        const { error } = await supabase.from("roteiros").delete().eq("id", id);
-        if (error) {
-            console.warn(error);
-            setRoteiros((p) => p.filter((r) => r.id !== id));
-            showToast("Roteiro removido localmente (Supabase indisponível)");
-        } else {
-            setRoteiros((p) => p.filter((r) => r.id !== id));
-            showToast("Roteiro removido");
+        // Valida duplicidade de loja
+        const jaExiste = lojasState.some(
+            (l) => l.loja.trim().toUpperCase() === novaLoja.loja.trim().toUpperCase()
+        );
+        if (jaExiste) {
+            showToast("Esta loja já está cadastrada no sistema.", "erro");
+            return;
         }
-    };
 
-    const salvarEdicao = async () => {
-        if (!modalEditar) return;
-        const { data, error } = await supabase
-            .from("roteiros")
-            .update({ ...modalEditar })
-            .eq("id", modalEditar.id)
-            .select()
-            .single();
-        if (error) {
-            console.warn(error);
-            setRoteiros((p) => p.map((r) => (r.id === modalEditar.id ? modalEditar : r)));
-            showToast("Roteiro atualizado localmente (Supabase indisponível)");
-        } else {
-            setRoteiros((p) => p.map((r) => (r.id === modalEditar.id ? data : r)));
-            showToast("Roteiro atualizado!");
+        setLoadingSupabase(true);
+        try {
+            const isAvailable = checkWriteAvailable();
+            if (isAvailable) {
+                const res = await saveLojaToSheets(novaLoja);
+                setLojasState((p) => [...p, res.data]);
+                showToast("Loja adicionada na planilha com sucesso!");
+            } else {
+                setLojasState((p) => [...p, { ...novaLoja, id: Date.now() }]);
+                showToast("Loja adicionada localmente (Planilha não configurada)");
+            }
+            setLojaForm({ rede: "", loja: "", uf: "" });
+            setModalLoja(false);
+        } catch (error) {
+            console.error(error);
+            showToast("Erro ao cadastrar loja na planilha: " + error.message, "erro");
+        } finally {
+            setLoadingSupabase(false);
         }
-        setModalEditar(null);
     };
 
     const setF = (k, v) => setFiltros((f) => ({ ...f, [k]: v }));
@@ -418,25 +712,35 @@ export default function App() {
             return;
         }
 
-        const diasSemana = { SEG: "Segunda", TER: "Terça", QUA: "Quarta", QUI: "Quinta", SEX: "Sexta", SAB: "Sábado", DOM: "Domingo" };
+        const diasSemana = { 
+            SEG: "Segunda-feira", 
+            TER: "Terça-feira", 
+            QUA: "Quarta-feira", 
+            QUI: "Quinta-feira", 
+            SEX: "Sexta-feira", 
+            SAB: "Sábado", 
+            DOM: "Domingo" 
+        };
+        
         let msg = `📋 *ROTEIRO SEMANAL*\n`;
-        msg += `👤 *${promotorNome}*\n`;
-        msg += `📅 Gerado em ${new Date().toLocaleDateString("pt-BR")}\n`;
-        msg += `━━━━━━━━━━━━━━━━━━\n\n`;
+        msg += `👤 Promotor: *${promotorNome}*\n`;
+        msg += `📅 Gerado em: ${new Date().toLocaleDateString("pt-BR")}\n`;
+        msg += `─────────────────────\n\n`;
 
         DIAS.forEach((dia) => {
             const doDia = roteirosDoPromotor.filter((r) => r.dias[dia]);
             if (doDia.length > 0) {
                 msg += `📌 *${diasSemana[dia]}*\n`;
                 doDia.forEach((r) => {
-                    msg += `  🏪 ${r.loja} (${r.uf})\n`;
-                    msg += `  🏭 ${r.industria}\n\n`;
+                    msg += `• 🏪 *${r.loja} (${r.uf})*\n`;
+                    msg += `  🏭 Indústria: ${r.industria}\n`;
                 });
+                msg += `\n`;
             }
         });
 
-        msg += `━━━━━━━━━━━━━━━━━━\n`;
-        msg += `✅ Total: ${roteirosDoPromotor.length} loja(s)`;
+        msg += `─────────────────────\n`;
+        msg += `✅ *Total: ${roteirosDoPromotor.length} loja(s)*`;
 
         const encoded = encodeURIComponent(msg);
         if (telefone) {
@@ -966,14 +1270,14 @@ export default function App() {
 
             {modalVisita && (
                 <Modal titulo="Nova Visita" onClose={() => setModalVisita(false)}>
-                    <FormVisita visita={novaVisita} setVisita={setNovaVisita} lojas={lojasState} promotores={promotoresParaSelect} industrias={INDUSTRIAS} supervisores={supervisoresParaSelect} />
-                    <BotoesModal onCancel={() => setModalVisita(false)} onSave={salvarVisita} labelSave="Salvar" />
+                    <FormVisita isEditing={false} visita={novaVisita} setVisita={setNovaVisita} lojas={lojasState} promotores={promotoresParaSelect} industrias={industriasState} supervisores={supervisoresParaSelect} />
+                    <BotoesModal onCancel={() => setModalVisita(false)} onSave={salvarVisita} labelSave="Criar Visitas em Massa" />
                 </Modal>
             )}
 
             {modalEditar && (
                 <Modal titulo="Editar Roteiro" onClose={() => setModalEditar(null)}>
-                    <FormVisita visita={modalEditar} setVisita={setModalEditar} lojas={lojasState} promotores={promotoresParaSelect} industrias={INDUSTRIAS} supervisores={supervisoresParaSelect} />
+                    <FormVisita isEditing={true} visita={modalEditar} setVisita={setModalEditar} lojas={lojasState} promotores={promotoresParaSelect} industrias={industriasState} supervisores={supervisoresParaSelect} />
                     <BotoesModal onCancel={() => setModalEditar(null)} onSave={salvarEdicao} labelSave="Salvar Alterações" />
                 </Modal>
             )}
