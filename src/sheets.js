@@ -168,6 +168,9 @@ export async function loadAllFromSheets() {
 
 /**
  * Função genérica para enviar comandos POST para o Google Apps Script Web App
+ * Suporta dois formatos de resposta de erro:
+ * 1. { status: "error", message: "..." } - formato legado
+ * 2. { success: false, message: "..." } - formato padrão solicitado
  */
 async function postToSheets(action, payloadData) {
   if (!SCRIPT_URL) {
@@ -180,6 +183,8 @@ async function postToSheets(action, payloadData) {
     data: payloadData
   };
 
+  console.log(`[Sheets API] Enviando ${action}:`, JSON.stringify(payloadData, null, 2));
+
   const resp = await fetch(SCRIPT_URL, {
     method: "POST",
     mode: "cors",
@@ -189,14 +194,39 @@ async function postToSheets(action, payloadData) {
     body: JSON.stringify(payload)
   });
 
+  console.log(`[Sheets API] Resposta HTTP ${resp.status} para ${action}`);
+
   if (!resp.ok) {
-    throw new Error(`Erro HTTP na escrita: ${resp.status}`);
+    const errorText = await resp.text().catch(() => 'Sem corpo de resposta');
+    console.error(`[Sheets API] Erro HTTP ${resp.status}:`, errorText);
+    throw new Error(`Erro HTTP na escrita: ${resp.status} - ${errorText}`);
   }
 
-  const result = await resp.json();
-  if (result.status === "error") {
-    throw new Error(result.message);
+  let result;
+  try {
+    result = await resp.json();
+  } catch (jsonError) {
+    const responseText = await resp.text().catch(() => 'Não foi possível ler resposta');
+    console.error(`[Sheets API] Resposta não é JSON válido:`, responseText);
+    throw new Error(`Resposta inválida do servidor: ${responseText.substring(0, 200)}`);
   }
+
+  console.log(`[Sheets API] Resposta parseada:`, JSON.stringify(result, null, 2));
+
+  // Verifica ambos os formatos de erro possíveis
+  const isErrorResponse = result.status === "error" || result.success === false;
+  const errorMessage = result.message || result.error || "Erro desconhecido na API";
+
+  if (isErrorResponse) {
+    console.error(`[Sheets API] Erro na resposta:`, errorMessage);
+    throw new Error(errorMessage);
+  }
+
+  // Valida se a resposta de sucesso contém dados esperados
+  if (result.success === true && !result.data) {
+    console.warn(`[Sheets API] Resposta de sucesso sem dados:`, result);
+  }
+
   return result;
 }
 

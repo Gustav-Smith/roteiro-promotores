@@ -34,18 +34,9 @@ export default function App() {
     const [modalEditarPessoa, setModalEditarPessoa] = useState(null);
     const [modoManual, setModoManual] = useState(false);
     const [manualInput, setManualInput] = useState("");
-    const [pessoaForm, setPessoaForm] = useState({ nome: "", loja: "", role: "Promotor" });
     const [pessoas, setPessoas] = useState(
         PROMOTORES_DADOS.map((p) => ({ ...p, role: "Promotor", loja: p.loja || "", cidade: p.cidade || "" }))
     );
-    const [novaVisita, setNovaVisita] = useState({
-        industrias: [],
-        lojas: [],
-        uf: "",
-        promotores: [],
-        supervisor: "LUCAS",
-        dias: { SEG: false, TER: false, QUA: false, QUI: false, SEX: false, SAB: false, DOM: false },
-    });
     const [toast, setToast] = useState(null);
     const [buscaLojas, setBuscaLojas] = useState("");
     const [filtroUFLojas, setFiltroUFLojas] = useState("");
@@ -255,11 +246,91 @@ export default function App() {
         return true;
     };
 
+    // Chave para armazenamento do backup do formulário no localStorage
+    const FORM_VISITA_STORAGE_KEY = 'mk9_form_visita_backup';
+
+    // Função para salvar backup do formulário no localStorage
+    const saveFormBackup = (formData) => {
+      try {
+        const backup = {
+          data: formData,
+          timestamp: Date.now(),
+          version: 1
+        };
+        localStorage.setItem(FORM_VISITA_STORAGE_KEY, JSON.stringify(backup));
+        console.log('[FormVisita] Backup salvo no localStorage:', backup);
+      } catch (e) {
+        console.warn('[FormVisita] Falha ao salvar backup no localStorage:', e);
+      }
+    };
+
+    // Função para restaurar backup do formulário do localStorage
+    const restoreFormBackup = () => {
+      try {
+        const stored = localStorage.getItem(FORM_VISITA_STORAGE_KEY);
+        if (stored) {
+          const backup = JSON.parse(stored);
+          // Verifica se o backup não é muito antigo (24 horas)
+          const isRecent = (Date.now() - backup.timestamp) < 24 * 60 * 60 * 1000;
+          if (isRecent && backup.data) {
+            console.log('[FormVisita] Backup restaurado do localStorage:', backup);
+            return backup.data;
+          } else {
+            console.log('[FormVisita] Backup expirado, removendo...');
+            localStorage.removeItem(FORM_VISITA_STORAGE_KEY);
+          }
+        }
+      } catch (e) {
+        console.warn('[FormVisita] Falha ao restaurar backup do localStorage:', e);
+      }
+      return null;
+    };
+
+    // Função para limpar backup após sucesso
+    const clearFormBackup = () => {
+      try {
+        localStorage.removeItem(FORM_VISITA_STORAGE_KEY);
+        console.log('[FormVisita] Backup limpo após sucesso');
+      } catch (e) {
+        console.warn('[FormVisita] Falha ao limpar backup:', e);
+      }
+    };
+
+    // Estado inicial do formulário de visita
+    const INITIAL_NOVA_VISITA = {
+      industrias: [],
+      lojas: [],
+      uf: "",
+      promotores: [],
+      supervisor: "LUCAS",
+      dias: { SEG: false, TER: false, QUA: false, QUI: false, SEX: false, SAB: false, DOM: false },
+    };
+
+    // Tenta restaurar backup ao inicializar
+    const restoredBackup = restoreFormBackup();
+    const initialVisitaState = restoredBackup || INITIAL_NOVA_VISITA;
+
+    const [novaVisita, setNovaVisita] = useState(initialVisitaState);
+
+    // Salva backup sempre que o formulário muda (debounced via useEffect)
+    useEffect(() => {
+      if (modalVisita) {
+        saveFormBackup(novaVisita);
+      }
+    }, [novaVisita, modalVisita]);
+
     const salvarVisita = async () => {
         const selectedInds = novaVisita.industrias || [];
         const selectedLojas = novaVisita.lojas || [];
         const selectedPromos = novaVisita.promotores || [];
         const temDias = Object.values(novaVisita.dias || {}).some(Boolean);
+
+        console.log('[salvarVisita] Iniciando salvamento:', {
+          industrias: selectedInds.length,
+          lojas: selectedLojas.length,
+          promotores: selectedPromos.length,
+          temDias
+        });
 
         if (selectedInds.length === 0 || selectedLojas.length === 0 || selectedPromos.length === 0) {
             showToast("Selecione pelo menos 1 Promotor, 1 Loja e 1 Indústria.", "erro");
@@ -277,7 +348,7 @@ export default function App() {
             for (const loja of selectedLojas) {
                 const lojaObj = lojasState.find(l => l.loja.trim().toUpperCase() === loja.trim().toUpperCase());
                 const uf = lojaObj ? lojaObj.uf : "";
-                
+
                 for (const industria of selectedInds) {
                     combinacoes.push({
                         industria,
@@ -291,9 +362,11 @@ export default function App() {
             }
         }
 
+        console.log('[salvarVisita] Combinações geradas:', combinacoes.length);
+
         // Filtra combinações que já existem para evitar duplicidade
         const novasCombinacoes = combinacoes.filter(c => {
-            const jaExiste = roteiros.some(r => 
+            const jaExiste = roteiros.some(r =>
                 r.promotor.trim().toUpperCase() === c.promotor.trim().toUpperCase() &&
                 r.loja.trim().toUpperCase() === c.loja.trim().toUpperCase() &&
                 r.industria.trim().toUpperCase() === c.industria.trim().toUpperCase() &&
@@ -302,28 +375,37 @@ export default function App() {
             return !jaExiste;
         });
 
+        console.log('[salvarVisita] Novas combinações (após filtro duplicatas):', novasCombinacoes.length);
+
         if (novasCombinacoes.length === 0) {
             showToast("Todas as visitas selecionadas já existem no roteiro.", "erro");
+            setLoadingSupabase(false); // Garante que loading seja resetado
             return;
         }
 
         setLoadingSupabase(true);
+        let sucesso = false;
         try {
             const isAvailable = checkWriteAvailable();
+            console.log('[salvarVisita] checkWriteAvailable:', isAvailable);
+
             if (isAvailable) {
                 const res = await saveMultipleVisitasToSheets(novasCombinacoes);
+                console.log('[salvarVisita] Resposta da API:', res);
+
                 const listSaved = res.data;
 
                 // Valida se a resposta contém dados reais antes de considerar sucesso
                 if (!listSaved || !Array.isArray(listSaved) || listSaved.length === 0) {
                     throw new Error(
                         `A planilha não retornou as visitas salvas. Verifique o Apps Script e tente novamente. ` +
-                        `(${novasCombinacoes.length} visita(s) tentadas)`
+                        `(${novasCombinacoes.length} visita(s) tentadas, resposta: ${JSON.stringify(res).substring(0, 200)})`
                     );
                 }
 
                 setRoteiros((p) => [...p, ...listSaved]);
                 showToast(`${listSaved.length} visita(s) adicionadas na planilha com sucesso!`);
+                console.log('[salvarVisita] Sucesso na planilha:', listSaved.length, 'visitas');
             } else {
                 const listSavedLocal = novasCombinacoes.map((c, i) => ({
                     ...c,
@@ -331,34 +413,35 @@ export default function App() {
                 }));
                 setRoteiros((p) => [...p, ...listSavedLocal]);
                 showToast(`${listSavedLocal.length} visita(s) adicionadas! (Planilha: configure VITE_GOOGLE_SCRIPT_URL para sincronizar)`);
+                console.log('[salvarVisita] Sucesso local (fallback):', listSavedLocal.length, 'visitas');
             }
 
-            // ✅ Reset APENAS em caso de sucesso — nunca no catch ou finally
-            setNovaVisita({
-                industrias: [],
-                lojas: [],
-                uf: "",
-                promotores: [],
-                supervisor: "LUCAS",
-                dias: { SEG: false, TER: false, QUA: false, QUI: false, SEX: false, SAB: false, DOM: false },
-            });
+            sucesso = true;
+
+            // ✅ Reset APENAS em caso de sucesso confirmado — nunca no catch ou finally
+            setNovaVisita(INITIAL_NOVA_VISITA);
+            clearFormBackup(); // Limpa backup após sucesso confirmado
             setModalVisita(false);
+            console.log('[salvarVisita] Formulário resetado e modal fechado após sucesso');
         } catch (error) {
-            console.error("[salvarVisita] Erro:", error);
+            console.error("[salvarVisita] Erro capturado:", error);
             // ❌ NÃO reseta o formulário — usuário mantém todos os dados preenchidos
             // ❌ NÃO fecha o modal — usuário pode corrigir e tentar novamente
+            // ❌ NÃO limpa o backup — permite recuperação se usuário fechar aba acidentalmente
             showToast(
                 `Erro ao salvar: ${error.message || "Falha desconhecida"}. Seus dados foram mantidos — corrija e tente novamente.`,
                 "erro"
             );
         } finally {
+            // Garante que loading seja sempre resetado
             setLoadingSupabase(false);
+            console.log('[salvarVisita] Finalizado. Sucesso:', sucesso);
         }
     };
 
     const salvarEdicao = async () => {
         if (!modalEditar) return;
-        
+
         // Encontra o UF correspondente da loja automaticamente
         const lojaObj = lojasState.find(l => l.loja.trim().toUpperCase() === modalEditar.loja.trim().toUpperCase());
         const uf = lojaObj ? lojaObj.uf : "";
@@ -366,23 +449,35 @@ export default function App() {
 
         if (!validarDadosVisita(dadosEdicao, true)) return;
 
+        console.log('[salvarEdicao] Iniciando atualização:', { id: dadosEdicao.id });
+
         setLoadingSupabase(true);
+        let sucesso = false;
         try {
             const isAvailable = checkWriteAvailable();
+            console.log('[salvarEdicao] checkWriteAvailable:', isAvailable);
+
             if (isAvailable) {
                 const res = await saveVisitaToSheets(dadosEdicao);
+                console.log('[salvarEdicao] Resposta da API:', res);
                 setRoteiros((p) => p.map((r) => (r.id === dadosEdicao.id ? res.data : r)));
                 showToast("Roteiro atualizado na planilha!");
             } else {
                 setRoteiros((p) => p.map((r) => (r.id === dadosEdicao.id ? dadosEdicao : r)));
                 showToast("Roteiro atualizado localmente (Planilha não configurada)");
             }
+            sucesso = true;
             setModalEditar(null);
+            console.log('[salvarEdicao] Modal fechado após sucesso');
         } catch (error) {
-            console.error(error);
-            showToast("Erro ao atualizar roteiro na planilha: " + error.message, "erro");
+            console.error("[salvarEdicao] Erro capturado:", error);
+            showToast(
+                `Erro ao atualizar: ${error.message || "Falha desconhecida"}. Suas alterações foram mantidas — corrija e tente novamente.`,
+                "erro"
+            );
         } finally {
             setLoadingSupabase(false);
+            console.log('[salvarEdicao] Finalizado. Sucesso:', sucesso);
         }
     };
 
@@ -440,15 +535,86 @@ export default function App() {
         return true;
     };
 
+    // Chave para armazenamento do backup do formulário de pessoa no localStorage
+    const FORM_PESSOA_STORAGE_KEY = 'mk9_form_pessoa_backup';
+
+    // Função para salvar backup do formulário de pessoa no localStorage
+    const savePessoaFormBackup = (formData) => {
+      try {
+        const backup = {
+          data: formData,
+          timestamp: Date.now(),
+          version: 1
+        };
+        localStorage.setItem(FORM_PESSOA_STORAGE_KEY, JSON.stringify(backup));
+        console.log('[FormPessoa] Backup salvo no localStorage:', backup);
+      } catch (e) {
+        console.warn('[FormPessoa] Falha ao salvar backup no localStorage:', e);
+      }
+    };
+
+    // Função para restaurar backup do formulário de pessoa do localStorage
+    const restorePessoaFormBackup = () => {
+      try {
+        const stored = localStorage.getItem(FORM_PESSOA_STORAGE_KEY);
+        if (stored) {
+          const backup = JSON.parse(stored);
+          const isRecent = (Date.now() - backup.timestamp) < 24 * 60 * 60 * 1000;
+          if (isRecent && backup.data) {
+            console.log('[FormPessoa] Backup restaurado do localStorage:', backup);
+            return backup.data;
+          } else {
+            console.log('[FormPessoa] Backup expirado, removendo...');
+            localStorage.removeItem(FORM_PESSOA_STORAGE_KEY);
+          }
+        }
+      } catch (e) {
+        console.warn('[FormPessoa] Falha ao restaurar backup do localStorage:', e);
+      }
+      return null;
+    };
+
+    // Função para limpar backup de pessoa após sucesso
+    const clearPessoaFormBackup = () => {
+      try {
+        localStorage.removeItem(FORM_PESSOA_STORAGE_KEY);
+        console.log('[FormPessoa] Backup limpo após sucesso');
+      } catch (e) {
+        console.warn('[FormPessoa] Falha ao limpar backup:', e);
+      }
+    };
+
+    // Estado inicial do formulário de pessoa
+    const INITIAL_PESSOA_FORM = { nome: "", loja: "", role: "Promotor", cidade: "", observacao: "", telefone: "" };
+
+    // Tenta restaurar backup de pessoa ao inicializar
+    const restoredPessoaBackup = restorePessoaFormBackup();
+    const initialPessoaState = restoredPessoaBackup || INITIAL_PESSOA_FORM;
+
+    const [pessoaForm, setPessoaForm] = useState(initialPessoaState);
+
+    // Salva backup sempre que o formulário de pessoa muda (quando modal está aberto)
+    useEffect(() => {
+      if (modalPessoa) {
+        savePessoaFormBackup(pessoaForm);
+      }
+    }, [pessoaForm, modalPessoa]);
+
     const salvarPessoa = async () => {
         const novaPessoa = { ...pessoaForm, cidade: pessoaForm.cidade || "", observacao: pessoaForm.observacao || "" };
         if (!validarPessoa(novaPessoa, false)) return;
 
+        console.log('[salvarPessoa] Iniciando salvamento:', { nome: novaPessoa.nome, role: novaPessoa.role });
+
         setLoadingSupabase(true);
+        let sucesso = false;
         try {
             const isAvailable = checkWriteAvailable();
+            console.log('[salvarPessoa] checkWriteAvailable:', isAvailable);
+
             if (isAvailable) {
                 const res = await savePessoaToSheets(novaPessoa);
+                console.log('[salvarPessoa] Resposta da API:', res);
                 setPessoas((p) => [...p, res.data]);
                 showToast("Pessoa adicionada na planilha!");
             } else {
@@ -456,13 +622,20 @@ export default function App() {
                 setPessoas((p) => [...p, localPessoa]);
                 showToast("Pessoa adicionada localmente (Planilha não configurada)");
             }
-            setPessoaForm({ nome: "", loja: "", role: "Promotor" });
+            sucesso = true;
+            setPessoaForm(INITIAL_PESSOA_FORM);
+            clearPessoaFormBackup();
             setModalPessoa(false);
+            console.log('[salvarPessoa] Formulário resetado e modal fechado após sucesso');
         } catch (error) {
-            console.error(error);
-            showToast("Erro ao salvar pessoa na planilha: " + error.message, "erro");
+            console.error("[salvarPessoa] Erro capturado:", error);
+            showToast(
+                `Erro ao salvar: ${error.message || "Falha desconhecida"}. Seus dados foram mantidos — corrija e tente novamente.`,
+                "erro"
+            );
         } finally {
             setLoadingSupabase(false);
+            console.log('[salvarPessoa] Finalizado. Sucesso:', sucesso);
         }
     };
 
@@ -558,26 +731,45 @@ export default function App() {
             return;
         }
 
+        console.log('[processarManual] Iniciando processamento:', { totalLinhas: linhas.length, novasValidas: novas.length });
+
         setLoadingSupabase(true);
+        let sucesso = false;
         try {
             const isAvailable = checkWriteAvailable();
+            console.log('[processarManual] checkWriteAvailable:', isAvailable);
+
             if (isAvailable) {
                 await saveMultiplePessoasToSheets(novas);
                 setPessoas((p) => [...p, ...novas]);
                 showToast(`${novas.length} pessoas adicionadas na planilha com sucesso!`);
+                console.log('[processarManual] Sucesso na planilha:', novas.length, 'pessoas');
             } else {
                 setPessoas((p) => [...p, ...novas]);
                 showToast(`${novas.length} pessoas adicionadas localmente (Planilha não configurada)`);
+                console.log('[processarManual] Sucesso local (fallback):', novas.length, 'pessoas');
             }
+            sucesso = true;
         } catch (error) {
-            console.error(error);
-            showToast("Erro ao processar lista manual na planilha: " + error.message, "erro");
+            console.error("[processarManual] Erro capturado:", error);
+            showToast(
+                `Erro ao processar: ${error.message || "Falha desconhecida"}. Seus dados foram mantidos — corrija e tente novamente.`,
+                "erro"
+            );
         } finally {
             setLoadingSupabase(false);
-            setManualInput("");
-            setModoManual(false);
-            setPessoaForm({ nome: "", loja: "", role: "Promotor" });
-            setModalPessoa(false);
+            // Só limpa formulário e fecha modal em caso de sucesso
+            if (sucesso) {
+                setManualInput("");
+                setModoManual(false);
+                setPessoaForm(INITIAL_PESSOA_FORM);
+                clearPessoaFormBackup();
+                setModalPessoa(false);
+                console.log('[processarManual] Formulário limpo e modal fechado após sucesso');
+            } else {
+                console.log('[processarManual] Formulário mantido para correção');
+            }
+            console.log('[processarManual] Finalizado. Sucesso:', sucesso);
         }
     };
 
